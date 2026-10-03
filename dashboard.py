@@ -146,7 +146,7 @@ if uploaded_file is not None:
             fig_clasif_micro.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif_micro[col_cant].max() * 1.25]))
             st.plotly_chart(fig_clasif_micro, use_container_width=True, key="graf_clasif_micro")
             
-            # NUEVO BLOQUE: Desglose interno por Clasificación
+            # BLOQUE: Desglose interno por Clasificación
             st.markdown("---")
             st.subheader("🔍 Desglose Interno por Categoría")
             st.markdown("Seleccioná una clasificación para ver exactamente qué prácticas la componen.")
@@ -168,13 +168,39 @@ if uploaded_file is not None:
                 fig_desglose.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_top[col_precio_t].max() * 1.3]))
                 st.plotly_chart(fig_desglose, use_container_width=True, key="graf_desglose_cat")
                 
-                # Mostrar tabla completa ordenada por gasto descendente
+                # Mostrar tabla completa
                 st.markdown("**Detalle completo de todas las prácticas en esta clasificación:**")
                 df_desglose_tabla = df_desglose_agrupado.sort_values(col_precio_t, ascending=False)
                 st.dataframe(df_desglose_tabla.style.format({
                     col_cant: lambda x: formato_arg(x, False),
                     col_precio_t: lambda x: formato_arg(x)
                 }), use_container_width=True)
+
+                # NUEVO BLOQUE (Agregado sin borrar nada): Trazabilidad de Afiliados por Práctica
+                st.markdown("---")
+                st.subheader("🕵️‍♂️ Trazabilidad de Afiliados por Práctica")
+                st.markdown(f"Seleccioná una práctica específica dentro de **{clasif_sel}** para ver el listado exacto de afiliados y consumos.")
+
+                practicas_en_clasif = df_desglose[col_nomen_des].dropna().unique()
+                practica_drilldown = st.selectbox("Elegí la práctica a auditar:", practicas_en_clasif, key="drilldown_practica")
+
+                if practica_drilldown:
+                    df_drilldown = df_desglose[df_desglose[col_nomen_des] == practica_drilldown].copy()
+                    df_drilldown_display = df_drilldown[[col_fecha, col_nomen_des, 'afiliado_display', col_cant, col_precio_t]].sort_values(col_fecha)
+
+                    df_drilldown_display = df_drilldown_display.rename(columns={
+                        col_fecha: 'Fecha',
+                        col_nomen_des: 'Práctica / Insumo',
+                        'afiliado_display': 'Afiliado (Nº y Nombre)',
+                        col_cant: 'Cantidad',
+                        col_precio_t: 'Precio Total'
+                    })
+
+                    st.dataframe(df_drilldown_display.style.format({
+                        "Cantidad": lambda x: formato_arg(x, False),
+                        "Precio Total": lambda x: formato_arg(x),
+                        "Fecha": lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) else ""
+                    }), use_container_width=True)
 
         else:
             st.info("Seleccioná al menos un mes para visualizar los gráficos.")
@@ -194,7 +220,7 @@ if uploaded_file is not None:
         fig_top_costos.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_top_costos[col_precio_t].max() * 1.3]))
         st.plotly_chart(fig_top_costos, use_container_width=True, key="graf_top_costos")
 
-        # NUEVO BLOQUE: Comparativa de Mercado entre todos los prestadores
+        # Comparativa de Mercado entre todos los prestadores
         st.markdown("---")
         st.subheader("⚖️ Comparativa de Mercado entre Prestadores")
         st.markdown("Compará el precio unitario promedio de una misma práctica en todos los centros que la realizan.")
@@ -213,14 +239,13 @@ if uploaded_file is not None:
             fig_comp.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_comp_agrupado[col_precio_u].max() * 1.25]))
             st.plotly_chart(fig_comp, use_container_width=True, key="graf_comp_mercado")
             
-            # Tabla resumen debajo del gráfico
             with st.expander("Ver tabla detallada de la comparativa"):
                 st.dataframe(df_comp_agrupado.sort_values(col_precio_u, ascending=False).style.format({
                     col_precio_u: lambda x: formato_arg(x),
                     col_cant: lambda x: formato_arg(x, False)
                 }), use_container_width=True)
 
-        # Mantenemos Consulta Rápida Intacta
+        # Consulta Rápida Intacta
         st.markdown("---")
         st.subheader("🔍 Consulta Rápida: Centro Específico")
         
@@ -252,7 +277,6 @@ if uploaded_file is not None:
     with tab4:
         st.header("Análisis y Auditoría de Afiliados")
         
-        # NUEVO BLOQUE: Ranking Histórico (Top 50)
         st.subheader("🏆 Ranking de Afiliados con Mayor Consumo")
         st.markdown("Revisá el Top 50 de mayor gasto. Podés buscar y copiar el número del afiliado para analizarlo abajo.")
         
@@ -261,7 +285,6 @@ if uploaded_file is not None:
         
         st.markdown("---")
         
-        # Mantenemos el Buscador Individual Intacto
         st.subheader("🔍 Lupa sobre un Afiliado Específico")
         lista_afiliados = df['afiliado_display'].dropna().unique()
         
