@@ -100,7 +100,8 @@ if uploaded_file is not None:
             
             df_mes_fact['texto_label'] = df_mes_fact[col_precio_t].apply(formato_arg)
             fig_fact = px.line(df_mes_fact, x='Mes', y=col_precio_t, markers=True, text='texto_label')
-            fig_fact.update_traces(textposition='top center', textfont_size=14, textangle=0, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
+            # CORRECCIÓN ACÁ: Se eliminó textangle=0 del gráfico de líneas
+            fig_fact.update_traces(textposition='top center', textfont_size=14, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
             fig_fact.update_layout(separators=".,", yaxis_tickformat=",.0f")
             st.plotly_chart(fig_fact, use_container_width=True)
             
@@ -133,7 +134,6 @@ if uploaded_file is not None:
             df_clasif_mes['texto_label'] = df_clasif_mes[col_cant].apply(lambda x: formato_arg(x, False))
             
             fig_clasif_mes = px.bar(df_clasif_mes, x='Mes', y=col_cant, color=col_clasif, barmode='group', text='texto_label')
-            # Texto forzado a horizontal y sin k
             fig_clasif_mes.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Cantidad: %{text}<extra></extra>', cliponaxis=False)
             fig_clasif_mes.update_layout(separators=".,", yaxis_tickformat=",.0f", yaxis=dict(range=[0, df_clasif_mes[col_cant].max() * 1.15]))
             st.plotly_chart(fig_clasif_mes, use_container_width=True)
