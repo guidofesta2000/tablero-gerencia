@@ -17,7 +17,7 @@ st.title("📊 Panel de Control Directivo - Autorizaciones ObSBA")
 
 st.sidebar.header("Carga de Base de Datos")
 st.sidebar.markdown("Subí el Excel del período a analizar.")
-uploaded_file = st.sidebar.file_uploader("Archivo Excel", type=["xlsx", "xls"])
+uploaded_file = st.sidebar.file_uploader("Archivo Excel", type=["xlsx", "xls"], key="carga_excel")
 
 if uploaded_file is not None:
     df = pd.read_excel(uploaded_file)
@@ -25,7 +25,7 @@ if uploaded_file is not None:
     # 1. Limpieza inicial
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
     
-    # 2. RENOMBRAMIENTO ESTRUCTURAL (Soluciona los ejes para siempre)
+    # 2. RENOMBRAMIENTO ESTRUCTURAL
     mapa_nombres = {
         'fecha': 'Fecha',
         'nomen_cod': 'Código',
@@ -69,7 +69,7 @@ if uploaded_file is not None:
     df['Mes'] = pd.Categorical(df['Mes'], categories=orden_meses, ordered=True)
     df['afiliado_display'] = df[col_num_afiliado].astype(str) + " - " + df[col_nom_afiliado].astype(str)
 
-    # Creamos las 5 pestañas manteniendo todo lo anterior
+    # Creamos las 5 pestañas
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 1. Resumen Ejecutivo (Macro)", 
         "📅 2. Análisis Mensual (Micro)",
@@ -100,10 +100,9 @@ if uploaded_file is not None:
             
             df_mes_fact['texto_label'] = df_mes_fact[col_precio_t].apply(formato_arg)
             fig_fact = px.line(df_mes_fact, x='Mes', y=col_precio_t, markers=True, text='texto_label')
-            # CORRECCIÓN ACÁ: Se eliminó textangle=0 del gráfico de líneas
             fig_fact.update_traces(textposition='top center', textfont_size=14, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
-            fig_fact.update_layout(separators=".,", yaxis_tickformat=",.0f")
-            st.plotly_chart(fig_fact, use_container_width=True)
+            fig_fact.update_layout(separators=",.", yaxis_tickformat=",.0f")
+            st.plotly_chart(fig_fact, use_container_width=True, key="graf_fact_macro")
             
         with col_t2:
             st.subheader("Volumen Global de Autorizaciones")
@@ -112,8 +111,8 @@ if uploaded_file is not None:
             
             fig_clasif = px.bar(df_clasif, x=col_cant, y=col_clasif, orientation='h', text='texto_label')
             fig_clasif.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Cantidad: %{text}<extra></extra>', cliponaxis=False)
-            fig_clasif.update_layout(separators=".,", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif[col_cant].max() * 1.25]))
-            st.plotly_chart(fig_clasif, use_container_width=True)
+            fig_clasif.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif[col_cant].max() * 1.25]))
+            st.plotly_chart(fig_clasif, use_container_width=True, key="graf_clasif_macro")
 
     # ----------------------------------------
     # TAB 2: ANÁLISIS MENSUAL (MICRO INTERACTIVO)
@@ -123,7 +122,7 @@ if uploaded_file is not None:
         st.markdown("Seleccioná los meses que deseás analizar para evitar saturación visual en los gráficos.")
         
         meses_presentes = [m for m in orden_meses if m in df['Mes'].dropna().unique()]
-        meses_seleccionados = st.multiselect("Filtro de Meses:", options=meses_presentes, default=meses_presentes)
+        meses_seleccionados = st.multiselect("Filtro de Meses:", options=meses_presentes, default=meses_presentes, key="filtro_meses_micro")
         
         if meses_seleccionados:
             df_micro = df[df['Mes'].isin(meses_seleccionados)]
@@ -135,8 +134,8 @@ if uploaded_file is not None:
             
             fig_clasif_mes = px.bar(df_clasif_mes, x='Mes', y=col_cant, color=col_clasif, barmode='group', text='texto_label')
             fig_clasif_mes.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Cantidad: %{text}<extra></extra>', cliponaxis=False)
-            fig_clasif_mes.update_layout(separators=".,", yaxis_tickformat=",.0f", yaxis=dict(range=[0, df_clasif_mes[col_cant].max() * 1.15]))
-            st.plotly_chart(fig_clasif_mes, use_container_width=True)
+            fig_clasif_mes.update_layout(separators=",.", yaxis_tickformat=",.0f", yaxis=dict(range=[0, df_clasif_mes[col_cant].max() * 1.15]))
+            st.plotly_chart(fig_clasif_mes, use_container_width=True, key="graf_comparativa_meses")
             
             st.subheader("Volumen Consolidado (Solo Meses Seleccionados)")
             df_clasif_micro = df_micro.groupby(col_clasif)[col_cant].sum().reset_index().sort_values(col_cant, ascending=True)
@@ -144,8 +143,8 @@ if uploaded_file is not None:
             
             fig_clasif_micro = px.bar(df_clasif_micro, x=col_cant, y=col_clasif, orientation='h', text='texto_label')
             fig_clasif_micro.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Cantidad: %{text}<extra></extra>', cliponaxis=False)
-            fig_clasif_micro.update_layout(separators=".,", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif_micro[col_cant].max() * 1.25]))
-            st.plotly_chart(fig_clasif_micro, use_container_width=True)
+            fig_clasif_micro.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif_micro[col_cant].max() * 1.25]))
+            st.plotly_chart(fig_clasif_micro, use_container_width=True, key="graf_clasif_micro")
         else:
             st.info("Seleccioná al menos un mes para visualizar los gráficos.")
 
@@ -161,8 +160,8 @@ if uploaded_file is not None:
         
         fig_top_costos = px.bar(df_top_costos, x=col_precio_t, y=col_nomen_des, orientation='h', text='texto_label')
         fig_top_costos.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
-        fig_top_costos.update_layout(separators=".,", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_top_costos[col_precio_t].max() * 1.3]))
-        st.plotly_chart(fig_top_costos, use_container_width=True)
+        fig_top_costos.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_top_costos[col_precio_t].max() * 1.3]))
+        st.plotly_chart(fig_top_costos, use_container_width=True, key="graf_top_costos")
 
         st.markdown("---")
         st.subheader("🔍 Consulta Rápida: Precio de Práctica en un Centro Específico")
@@ -199,7 +198,7 @@ if uploaded_file is not None:
         lista_afiliados = df['afiliado_display'].dropna().unique()
         
         if len(lista_afiliados) > 0:
-            afiliado_sel = st.selectbox("Escribí el NOMBRE o el NÚMERO del afiliado para buscarlo:", lista_afiliados)
+            afiliado_sel = st.selectbox("Escribí el NOMBRE o el NÚMERO del afiliado para buscarlo:", lista_afiliados, key="afiliado_buscador")
             
             df_afil = df[df['afiliado_display'] == afiliado_sel]
             nom_afil_actual = df_afil[col_nom_afiliado].iloc[0]
@@ -212,8 +211,8 @@ if uploaded_file is not None:
             with col_af1:
                 fig_afil_comp = px.pie(df_afil, values=col_precio_t, names=col_clasif, title="Composición del Gasto")
                 fig_afil_comp.update_traces(textinfo='label+percent', hovertemplate='Clasificación: %{label}<br>Gasto representativo<extra></extra>')
-                fig_afil_comp.update_layout(separators=".,")
-                st.plotly_chart(fig_afil_comp, use_container_width=True)
+                fig_afil_comp.update_layout(separators=",.")
+                st.plotly_chart(fig_afil_comp, use_container_width=True, key="graf_pie_afil")
                 
             with col_af2:
                 df_afil_mes = df_afil.groupby('Mes', observed=False)[col_precio_t].sum().reset_index()
@@ -222,8 +221,8 @@ if uploaded_file is not None:
                 
                 fig_afil_mes = px.bar(df_afil_mes, x='Mes', y=col_precio_t, text='texto_label', title="Consumo en el Tiempo")
                 fig_afil_mes.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
-                fig_afil_mes.update_layout(separators=".,", yaxis_tickformat=",.0f", yaxis=dict(range=[0, df_afil_mes[col_precio_t].max() * 1.3]))
-                st.plotly_chart(fig_afil_mes, use_container_width=True)
+                fig_afil_mes.update_layout(separators=",.", yaxis_tickformat=",.0f", yaxis=dict(range=[0, df_afil_mes[col_precio_t].max() * 1.3]))
+                st.plotly_chart(fig_afil_mes, use_container_width=True, key="graf_bar_afil")
                 
             st.subheader("Historial de Consumos del Afiliado")
             df_afil_display = df_afil[[col_fecha, col_nomen_des, col_cant, col_precio_u, col_precio_t, col_razon_social, col_sede]].sort_values(col_fecha)
@@ -268,8 +267,8 @@ if uploaded_file is not None:
                 df_dup_prov['texto_label'] = df_dup_prov[col_precio_t].apply(formato_arg)
                 fig_dup_prov = px.bar(df_dup_prov, x=col_precio_t, y=col_razon_social, orientation='h', text='texto_label')
                 fig_dup_prov.update_traces(textposition='outside', textfont_size=13, textangle=0, cliponaxis=False)
-                fig_dup_prov.update_layout(separators=".,", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_dup_prov[col_precio_t].max() * 1.3]), margin=dict(l=0, r=0, t=30, b=0))
-                st.plotly_chart(fig_dup_prov, use_container_width=True)
+                fig_dup_prov.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_dup_prov[col_precio_t].max() * 1.3]), margin=dict(l=0, r=0, t=30, b=0))
+                st.plotly_chart(fig_dup_prov, use_container_width=True, key="graf_dup_prov")
                 
             with col_g2:
                 st.markdown("**Top Prácticas más Duplicadas**")
@@ -277,8 +276,8 @@ if uploaded_file is not None:
                 df_dup_prac['texto_label'] = df_dup_prac[col_cant].apply(lambda x: formato_arg(x, False))
                 fig_dup_prac = px.bar(df_dup_prac, x=col_cant, y=col_nomen_des, orientation='h', text='texto_label')
                 fig_dup_prac.update_traces(textposition='outside', textfont_size=13, textangle=0, cliponaxis=False)
-                fig_dup_prac.update_layout(separators=".,", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_dup_prac[col_cant].max() * 1.3]), margin=dict(l=0, r=0, t=30, b=0))
-                st.plotly_chart(fig_dup_prac, use_container_width=True)
+                fig_dup_prac.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_dup_prac[col_cant].max() * 1.3]), margin=dict(l=0, r=0, t=30, b=0))
+                st.plotly_chart(fig_dup_prac, use_container_width=True, key="graf_dup_prac")
 
             st.markdown("**Ranking de Afiliados Bajo Sospecha (Mayor cantidad de repeticiones)**")
             df_dup_afil = df_duplicados.groupby([col_num_afiliado, col_nom_afiliado]).size().reset_index(name='Cantidad de Registros Duplicados')
@@ -292,13 +291,13 @@ if uploaded_file is not None:
             f1, f2, f3 = st.columns(3)
             with f1:
                 opciones_prov = ["Todos"] + list(df_duplicados[col_razon_social].dropna().unique())
-                filtro_prov = st.selectbox("Filtrar por Centro Proveedor:", opciones_prov)
+                filtro_prov = st.selectbox("Filtrar por Centro Proveedor:", opciones_prov, key="filtro_prov")
             with f2:
                 opciones_prac = ["Todas"] + list(df_duplicados[col_nomen_des].dropna().unique())
-                filtro_prac = st.selectbox("Filtrar por Práctica:", opciones_prac)
+                filtro_prac = st.selectbox("Filtrar por Práctica:", opciones_prac, key="filtro_prac")
             with f3:
                 opciones_afil = ["Todos"] + list(df_duplicados['afiliado_display'].dropna().unique())
-                filtro_afil = st.selectbox("Filtrar por Afiliado:", opciones_afil)
+                filtro_afil = st.selectbox("Filtrar por Afiliado:", opciones_afil, key="filtro_afil")
                 
             # Aplicar filtros a la tabla
             df_tabla_dup = df_duplicados.copy()
