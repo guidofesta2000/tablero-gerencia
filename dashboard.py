@@ -2,19 +2,24 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Configuración de la página
-st.set_page_config(page_title="Dashboard Alta Gerencia - OSPBA", layout="wide")
-st.title("📊 Panel de Control Directivo - Autorizaciones OSPBA")
+# Función para formatear moneda a estilo argentino (punto para miles, coma para decimales)
+def formato_arg(valor, es_moneda=True):
+    if es_moneda:
+        texto = f"${valor:,.2f}"
+    else:
+        texto = f"{valor:,.0f}"
+    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# Barra lateral para carga de datos
+st.set_page_config(page_title="Dashboard Alta Gerencia - ObSBA", layout="wide")
+st.title("📊 Panel de Control Directivo - Autorizaciones ObSBA")
+
 st.sidebar.header("Carga de Base de Datos")
-st.sidebar.markdown("Subí el Excel del cuatrimestre (Mayo - Agosto).")
+st.sidebar.markdown("Subí el Excel del cuatrimestre.")
 uploaded_file = st.sidebar.file_uploader("Archivo Excel", type=["xlsx", "xls"])
 
 if uploaded_file is not None:
     df = pd.read_excel(uploaded_file)
     
-    # Preprocesamiento
     df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
     
     col_fecha = 'fecha'
@@ -30,7 +35,22 @@ if uploaded_file is not None:
     col_zona = 'zona'
     col_sede = 'sedes'
     
-    # Formateo de fechas
+    # Diccionario para nombres formales en las tablas visuales
+    nombres_formales = {
+        col_fecha: 'Fecha',
+        col_nomen_cod: 'Código',
+        col_nomen_des: 'Práctica / Insumo',
+        col_clasif: 'Clasificación',
+        col_cant: 'Cantidad',
+        col_precio_u: 'Precio Unitario',
+        col_precio_t: 'Precio Total',
+        col_razon_social: 'Centro Proveedor',
+        col_num_afiliado: 'Nº Afiliado',
+        col_nom_afiliado: 'Nombre Afiliado',
+        col_zona: 'Zona',
+        col_sede: 'Centro Autorizador'
+    }
+
     df[col_fecha] = pd.to_datetime(df[col_fecha], errors='coerce')
     df['Mes_Num'] = df[col_fecha].dt.month
     meses_map = {5: 'Mayo', 6: 'Junio', 7: 'Julio', 8: 'Agosto'}
@@ -48,94 +68,65 @@ if uploaded_file is not None:
     ])
 
     # ----------------------------------------
-    # TAB 1: RESUMEN EJECUTIVO (MACRO)
+    # TAB 1: RESUMEN EJECUTIVO
     # ----------------------------------------
     with tab1:
-        st.header("Visión General del Cuatrimestre (Mayo - Agosto)")
+        st.header("Visión General del Cuatrimestre")
         
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Facturación Total", f"${df[col_precio_t].sum():,.2f}")
-        col2.metric("Volumen Total (Cantidades)", f"{df[col_cant].sum():,.0f}")
-        col3.metric("Afiliados Atendidos", f"{df[col_num_afiliado].nunique()}")
-        col4.metric("Total de Prestadores", f"{df[col_razon_social].nunique()}")
+        col1.metric("Facturación Total", formato_arg(df[col_precio_t].sum()))
+        col2.metric("Volumen Total (Cantidades)", formato_arg(df[col_cant].sum(), False))
+        col3.metric("Afiliados Atendidos", formato_arg(df[col_num_afiliado].nunique(), False))
+        col4.metric("Total de Prestadores", formato_arg(df[col_razon_social].nunique(), False))
         
         st.markdown("---")
-        
         col_t1, col_t2 = st.columns(2)
+        
         with col_t1:
             st.subheader("Evolución de Facturación Mensual")
             df_mes_fact = df.groupby('Mes', observed=False)[col_precio_t].sum().reset_index()
-            fig_fact = px.line(df_mes_fact, x='Mes', y=col_precio_t, markers=True, text=col_precio_t,
-                               labels={col_precio_t: 'Facturación ($)'})
-            fig_fact.update_traces(line_color='#1f77b4', line_width=3, marker_size=10, 
-                                   texttemplate='$%{text:,.2f}', textposition='top center',
+            fig_fact = px.line(df_mes_fact, x='Mes', y=col_precio_t, markers=True, text=col_precio_t)
+            fig_fact.update_traces(texttemplate='$%{text:,.2f}', textposition='top center', textfont_size=14,
                                    hovertemplate='Gasto: $%{y:,.2f}<extra></extra>', cliponaxis=False)
-            fig_fact.update_layout(yaxis_tickformat='$,.2f')
+            fig_fact.update_layout(separators=".,", yaxis_tickformat='$,.2f')
             st.plotly_chart(fig_fact, use_container_width=True)
             
         with col_t2:
             st.subheader("Volumen de Autorizaciones por Clasificación")
-            df_clasif = df.groupby(col_clasif)[col_cant].sum().reset_index().sort_values(col_cant, ascending=False)
-            fig_clasif = px.bar(df_clasif, x=col_cant, y=col_clasif, orientation='h', text=col_cant,
-                                labels={col_cant: 'Cantidad Autorizada', col_clasif: 'Tipo de Práctica/Insumo'})
-            fig_clasif.update_traces(texttemplate='%{text:,.0f}', textposition='outside', 
+            # Ordenado de mayor a menor y limitando nombres largos
+            df_clasif = df.groupby(col_clasif)[col_cant].sum().reset_index().sort_values(col_cant, ascending=True)
+            fig_clasif = px.bar(df_clasif, x=col_cant, y=col_clasif, orientation='h', text=col_cant)
+            fig_clasif.update_traces(texttemplate='%{text:,.0f}', textposition='outside', textfont_size=14,
                                      hovertemplate='Cantidad: %{x:,.0f}<extra></extra>', cliponaxis=False)
+            fig_clasif.update_layout(separators=".,", xaxis=dict(range=[0, df_clasif[col_cant].max() * 1.25]))
             st.plotly_chart(fig_clasif, use_container_width=True)
 
         st.subheader("Desglose Mensual por Clasificación")
         df_clasif_mes = df.groupby(['Mes', col_clasif], observed=False)[col_cant].sum().reset_index()
         fig_clasif_mes = px.bar(df_clasif_mes, x='Mes', y=col_cant, color=col_clasif, barmode='group', text=col_cant)
-        fig_clasif_mes.update_traces(texttemplate='%{text:,.0f}', textposition='outside', 
+        fig_clasif_mes.update_traces(texttemplate='%{text:,.0f}', textposition='outside', textfont_size=12, textangle=-90,
                                      hovertemplate='Cantidad: %{y:,.0f}<extra></extra>', cliponaxis=False)
+        fig_clasif_mes.update_layout(separators=".,", yaxis=dict(range=[0, df_clasif_mes[col_cant].max() * 1.3]))
         st.plotly_chart(fig_clasif_mes, use_container_width=True)
 
     # ----------------------------------------
     # TAB 2: COSTOS Y PRESTADORES
     # ----------------------------------------
     with tab2:
-        st.header("Análisis de Costos, Precios Unitarios y Proveedores")
+        st.header("Análisis de Costos y Proveedores")
         
-        st.subheader("Top 10 Prácticas/Insumos que más presupuesto consumen")
-        df_top_costos = df.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=False).head(10)
-        fig_top_costos = px.bar(df_top_costos, x=col_nomen_des, y=col_precio_t, text=col_precio_t,
-                                labels={col_precio_t: 'Gasto Total ($)', col_nomen_des: 'Descripción'})
-        fig_top_costos.update_traces(texttemplate='$%{text:,.2f}', textposition='outside', 
-                                     hovertemplate='Gasto: $%{y:,.2f}<extra></extra>', cliponaxis=False)
-        fig_top_costos.update_layout(yaxis_tickformat='$,.2f')
+        st.subheader("Top 10 Prácticas que más presupuesto consumen")
+        df_top_costos = df.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True).tail(10)
+        fig_top_costos = px.bar(df_top_costos, x=col_precio_t, y=col_nomen_des, orientation='h', text=col_precio_t)
+        fig_top_costos.update_traces(texttemplate='$%{text:,.2f}', textposition='outside', textfont_size=14,
+                                     hovertemplate='Gasto: $%{x:,.2f}<extra></extra>', cliponaxis=False)
+        fig_top_costos.update_layout(separators=".,", xaxis=dict(range=[0, df_top_costos[col_precio_t].max() * 1.3]))
         st.plotly_chart(fig_top_costos, use_container_width=True)
-
-        st.markdown("---")
-        st.subheader("Comparativa Global de Precios entre Prestadores")
-        
-        practicas_comunes = df[col_nomen_des].dropna().unique()
-        practica_sel = st.selectbox("Seleccioná un insumo o práctica para ver en qué centros se hace y comparar:", practicas_comunes)
-        
-        df_practica = df[df[col_nomen_des] == practica_sel]
-        
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            df_precio_prestador = df_practica.groupby(col_razon_social)[col_precio_u].mean().reset_index().sort_values(col_precio_u)
-            fig_comp_precios = px.bar(df_precio_prestador, x=col_razon_social, y=col_precio_u, text=col_precio_u,
-                                      title="Precio Promedio Unitario por Centro",
-                                      labels={col_razon_social: 'Centro / Prestador', col_precio_u: 'Precio Unitario Promedio ($)'},
-                                      color=col_precio_u, color_continuous_scale='Reds')
-            fig_comp_precios.update_traces(texttemplate='$%{text:,.2f}', textposition='outside', 
-                                           hovertemplate='Precio Promedio: $%{y:,.2f}<extra></extra>', cliponaxis=False)
-            fig_comp_precios.update_layout(yaxis_tickformat='$,.2f')
-            st.plotly_chart(fig_comp_precios, use_container_width=True)
-            
-        with col_p2:
-            df_precio_mes = df_practica.groupby(['Mes', col_razon_social], observed=False)[col_precio_u].mean().reset_index()
-            fig_evol_precios = px.line(df_precio_mes, x='Mes', y=col_precio_u, color=col_razon_social, markers=True, text=col_precio_u,
-                                       title="Evolución del Precio Unitario a lo largo de los meses")
-            fig_evol_precios.update_traces(texttemplate='$%{text:,.2f}', textposition='top center', 
-                                           hovertemplate='Precio Promedio: $%{y:,.2f}<extra></extra>', cliponaxis=False)
-            fig_evol_precios.update_layout(yaxis_tickformat='$,.2f')
-            st.plotly_chart(fig_evol_precios, use_container_width=True)
 
         st.markdown("---")
         st.subheader("🔍 Consulta Rápida: Precio de Práctica en un Centro Específico")
         
+        practicas_comunes = df[col_nomen_des].dropna().unique()
         col_esp1, col_esp2 = st.columns(2)
         with col_esp1:
             practica_esp = st.selectbox("1. Buscá la práctica/insumo:", practicas_comunes, key="prac_especifica")
@@ -144,102 +135,104 @@ if uploaded_file is not None:
         centros_disponibles = df_prac_esp_filtrada[col_razon_social].dropna().unique()
         
         with col_esp2:
-            centro_esp = st.selectbox("2. Elegí el centro/prestador:", centros_disponibles, key="centro_especifico")
+            centro_esp = st.selectbox("2. Elegí el centro proveedor:", centros_disponibles, key="centro_especifico")
             
         df_resultado_esp = df_prac_esp_filtrada[df_prac_esp_filtrada[col_razon_social] == centro_esp]
         
         if not df_resultado_esp.empty:
-            precio_prom = df_resultado_esp[col_precio_u].mean()
-            precio_min = df_resultado_esp[col_precio_u].min()
-            precio_max = df_resultado_esp[col_precio_u].max()
-            volumen_total = df_resultado_esp[col_cant].sum()
-            
             st.info(f"**Análisis de '{practica_esp}' en '{centro_esp}':**")
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Precio Promedio", f"${precio_prom:,.2f}")
-            m2.metric("Precio Más Bajo Registrado", f"${precio_min:,.2f}")
-            m3.metric("Precio Más Alto Registrado", f"${precio_max:,.2f}")
-            m4.metric("Cantidad Total Autorizada", f"{volumen_total:,.0f}")
+            m1.metric("Precio Promedio", formato_arg(df_resultado_esp[col_precio_u].mean()))
+            m2.metric("Precio Más Bajo", formato_arg(df_resultado_esp[col_precio_u].min()))
+            m3.metric("Precio Más Alto", formato_arg(df_resultado_esp[col_precio_u].max()))
+            m4.metric("Volumen Autorizado", formato_arg(df_resultado_esp[col_cant].sum(), False))
         else:
             st.warning("No hay registros para esta combinación.")
 
     # ----------------------------------------
-    # TAB 3: AUDITORÍA DE AFILIADOS Y DEMOGRAFÍA
+    # TAB 3: AUDITORÍA DE AFILIADOS
     # ----------------------------------------
     with tab3:
-        st.header("Análisis de Consumo por Afiliado y Zona")
-        
-        col_dem1, col_dem2 = st.columns(2)
-        with col_dem1:
-            df_zona = df.groupby(col_zona)[col_precio_t].sum().reset_index()
-            fig_zona = px.pie(df_zona, values=col_precio_t, names=col_zona, title='Distribución del Gasto por Zona')
-            fig_zona.update_traces(textinfo='label+percent+value', texttemplate='%{label}<br>$%{value:,.2f}',
-                                   hovertemplate='Zona: %{label}<br>Gasto: $%{value:,.2f}<extra></extra>')
-            st.plotly_chart(fig_zona, use_container_width=True)
-            
-        with col_dem2:
-            st.markdown("**Top 5 Afiliados con Mayor Consumo**")
-            top_afiliados = df.groupby([col_num_afiliado, col_nom_afiliado])[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=False).head(5)
-            st.dataframe(top_afiliados.style.format({col_precio_t: '${:,.2f}'}), use_container_width=True)
-
-        st.markdown("---")
-        st.subheader("🔍 Lupa sobre un Afiliado Específico")
+        st.header("Análisis de Consumo por Afiliado")
         
         lista_afiliados = df['afiliado_display'].dropna().unique()
         afiliado_sel = st.selectbox("Escribí el NOMBRE o el NÚMERO del afiliado para buscarlo:", lista_afiliados)
         
         df_afil = df[df['afiliado_display'] == afiliado_sel]
-        
-        num_afil_actual = df_afil[col_num_afiliado].iloc[0]
         nom_afil_actual = df_afil[col_nom_afiliado].iloc[0]
+        num_afil_actual = df_afil[col_num_afiliado].iloc[0]
         
         st.markdown(f"### 👤 {nom_afil_actual} (Nº {num_afil_actual})")
-        st.write(f"**Gasto Total Cuatrimestral:** ${df_afil[col_precio_t].sum():,.2f}")
+        st.write(f"**Gasto Total Cuatrimestral:** {formato_arg(df_afil[col_precio_t].sum())}")
         
         col_af1, col_af2 = st.columns(2)
         with col_af1:
             fig_afil_comp = px.pie(df_afil, values=col_precio_t, names=col_clasif, title="Composición del Gasto")
             fig_afil_comp.update_traces(textinfo='label+percent+value', texttemplate='%{label}<br>$%{value:,.2f}',
                                         hovertemplate='Clasificación: %{label}<br>Gasto: $%{value:,.2f}<extra></extra>')
+            fig_afil_comp.update_layout(separators=".,")
             st.plotly_chart(fig_afil_comp, use_container_width=True)
             
         with col_af2:
             df_afil_mes = df_afil.groupby('Mes', observed=False)[col_precio_t].sum().reset_index()
-            fig_afil_mes = px.bar(df_afil_mes, x='Mes', y=col_precio_t, text=col_precio_t, title="Consumo en el Tiempo (Mes a Mes)")
-            fig_afil_mes.update_traces(texttemplate='$%{text:,.2f}', textposition='outside', 
+            fig_afil_mes = px.bar(df_afil_mes, x='Mes', y=col_precio_t, text=col_precio_t, title="Consumo en el Tiempo")
+            fig_afil_mes.update_traces(texttemplate='$%{text:,.2f}', textposition='outside', textfont_size=14,
                                        hovertemplate='Gasto: $%{y:,.2f}<extra></extra>', cliponaxis=False)
-            fig_afil_mes.update_layout(yaxis_tickformat='$,.2f')
+            fig_afil_mes.update_layout(separators=".,", yaxis=dict(range=[0, df_afil_mes[col_precio_t].max() * 1.3]))
             st.plotly_chart(fig_afil_mes, use_container_width=True)
             
-        st.dataframe(df_afil[[col_fecha, col_nomen_des, col_cant, col_precio_u, col_precio_t, col_razon_social]].sort_values(col_fecha), use_container_width=True)
+        st.subheader("Historial de Consumos del Afiliado")
+        # Mostrar dataframe con nombres formales
+        df_afil_display = df_afil[[col_fecha, col_nomen_des, col_cant, col_precio_u, col_precio_t, col_razon_social, col_sede]].sort_values(col_fecha)
+        df_afil_display = df_afil_display.rename(columns=nombres_formales)
+        
+        # Aplicamos formato argentino a las columnas de dinero
+        st.dataframe(df_afil_display.style.format({
+            "Precio Unitario": lambda x: formato_arg(x),
+            "Precio Total": lambda x: formato_arg(x),
+            "Fecha": lambda x: x.strftime('%Y-%m-%d')
+        }), use_container_width=True)
 
     # ----------------------------------------
-    # TAB 4: ANÁLISIS DE SEDES Y CALIDAD DE DATOS
+    # TAB 4: CALIDAD Y DUPLICADOS
     # ----------------------------------------
     with tab4:
-        st.header("Desempeño de Sedes y Detección de Inconsistencias")
+        st.header("Control de Calidad de Datos ObSBA")
         
-        st.subheader("Volumen de Autorizaciones por Sede y Tipo")
-        df_sedes = df.groupby([col_sede, col_clasif])[col_cant].sum().reset_index()
-        fig_sedes = px.bar(df_sedes, x=col_sede, y=col_cant, color=col_clasif, barmode='stack', text=col_cant,
-                           title="¿Qué tipo de prácticas/insumos autoriza cada sede?")
-        fig_sedes.update_traces(texttemplate='%{text:,.0f}', textposition='inside',
-                                hovertemplate='Cantidad: %{y:,.0f}<extra></extra>')
-        st.plotly_chart(fig_sedes, use_container_width=True)
+        st.subheader("⚠️ Auditoría de Registros Duplicados")
+        st.markdown("Buscando prácticas idénticas autorizadas para un mismo afiliado **en la misma fecha**...")
         
+        # Lógica de detección de duplicados (Misma fecha, mismo afiliado, misma práctica)
+        df_duplicados = df[df.duplicated(subset=[col_fecha, col_num_afiliado, col_nomen_des], keep=False)]
+        
+        if not df_duplicados.empty:
+            df_duplicados = df_duplicados.sort_values(by=[col_fecha, col_num_afiliado])
+            cant_casos = df_duplicados.groupby([col_fecha, col_num_afiliado, col_nomen_des]).ngroups
+            st.error(f"Se detectaron {cant_casos} casos potenciales de doble carga o sobre-autorización.")
+            
+            df_dup_display = df_duplicados[[col_fecha, col_num_afiliado, col_nom_afiliado, col_nomen_des, col_cant, col_precio_t, col_razon_social]]
+            df_dup_display = df_dup_display.rename(columns=nombres_formales)
+            
+            st.dataframe(df_dup_display.style.format({
+                "Precio Total": lambda x: formato_arg(x),
+                "Fecha": lambda x: x.strftime('%Y-%m-%d')
+            }), use_container_width=True)
+        else:
+            st.success("¡Excelente! No se detectaron autorizaciones duplicadas para el mismo afiliado en la misma fecha.")
+
         st.markdown("---")
-        st.subheader("⚠️ Control de Calidad: Inconsistencias en Nomenclador")
-        st.markdown("Buscando códigos de nomenclador que tengan **más de una descripción asociada**...")
+        st.subheader("⚠️ Inconsistencias en el Nomenclador")
         
         inconsistencias = df.groupby(col_nomen_cod)[col_nomen_des].nunique().reset_index()
         codigos_problematicos = inconsistencias[inconsistencias[col_nomen_des] > 1][col_nomen_cod]
         
         if not codigos_problematicos.empty:
-            st.error(f"Se encontraron {len(codigos_problematicos)} código(s) con descripciones inconsistentes.")
+            st.warning(f"Se encontraron {len(codigos_problematicos)} códigos con descripciones múltiples.")
             df_inconsistente = df[df[col_nomen_cod].isin(codigos_problematicos)][[col_nomen_cod, col_nomen_des]].drop_duplicates().sort_values(col_nomen_cod)
+            df_inconsistente = df_inconsistente.rename(columns=nombres_formales)
             st.dataframe(df_inconsistente, use_container_width=True)
         else:
-            st.success("¡Excelente! Cada código de nomenclador corresponde a una única descripción.")
+            st.success("El nomenclador está limpio. Un código = Una descripción.")
 
 else:
     st.info("👈 Subí el reporte de Excel para generar la visualización.")
