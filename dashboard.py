@@ -17,7 +17,7 @@ st.title("📊 Panel de Control Directivo - Autorizaciones ObSBA")
 
 st.sidebar.header("Carga de Base de Datos")
 st.sidebar.markdown("Subí el Excel del período a analizar.")
-uploaded_file = st.sidebar.file_uploader("Archivo Excel", type=["xlsx", "xls"], key="carga_excel")
+uploaded_file = st.sidebar.file_uploader("Archivo Excel", type=["xlsx", "xls"], key="carga_excel_main")
 
 if uploaded_file is not None:
     df = pd.read_excel(uploaded_file)
@@ -69,7 +69,6 @@ if uploaded_file is not None:
     df['Mes'] = pd.Categorical(df['Mes'], categories=orden_meses, ordered=True)
     df['afiliado_display'] = df[col_num_afiliado].astype(str) + " - " + df[col_nom_afiliado].astype(str)
 
-    # Creamos las 5 pestañas
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 1. Resumen Ejecutivo (Macro)", 
         "📅 2. Análisis Mensual (Micro)",
@@ -127,6 +126,7 @@ if uploaded_file is not None:
         if meses_seleccionados:
             df_micro = df[df['Mes'].isin(meses_seleccionados)]
             
+            # Bloque Superior: Gráficos de Volumen Global
             st.subheader("Comparativa de Volumen Entre Meses Seleccionados")
             df_clasif_mes = df_micro.groupby(['Mes', col_clasif], observed=False)[col_cant].sum().reset_index()
             df_clasif_mes = df_clasif_mes[df_clasif_mes[col_cant] > 0]
@@ -145,6 +145,37 @@ if uploaded_file is not None:
             fig_clasif_micro.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Cantidad: %{text}<extra></extra>', cliponaxis=False)
             fig_clasif_micro.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif_micro[col_cant].max() * 1.25]))
             st.plotly_chart(fig_clasif_micro, use_container_width=True, key="graf_clasif_micro")
+            
+            # NUEVO BLOQUE: Desglose interno por Clasificación
+            st.markdown("---")
+            st.subheader("🔍 Desglose Interno por Categoría")
+            st.markdown("Seleccioná una clasificación para ver exactamente qué prácticas la componen.")
+            
+            clasificaciones_disp = df_micro[col_clasif].dropna().unique()
+            clasif_sel = st.selectbox("Elegí la Clasificación a desglosar:", clasificaciones_disp, key="selector_clasif_desglose")
+            
+            if clasif_sel:
+                df_desglose = df_micro[df_micro[col_clasif] == clasif_sel]
+                df_desglose_agrupado = df_desglose.groupby(col_nomen_des).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index().sort_values(col_precio_t, ascending=True)
+                
+                # Mostrar gráfico del top 15
+                df_desglose_top = df_desglose_agrupado.tail(15)
+                df_desglose_top['texto_label'] = df_desglose_top[col_precio_t].apply(formato_arg)
+                
+                fig_desglose = px.bar(df_desglose_top, x=col_precio_t, y=col_nomen_des, orientation='h', text='texto_label', 
+                                      title=f"Top 15 Prácticas con Mayor Gasto en '{clasif_sel}'")
+                fig_desglose.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
+                fig_desglose.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_top[col_precio_t].max() * 1.3]))
+                st.plotly_chart(fig_desglose, use_container_width=True, key="graf_desglose_cat")
+                
+                # Mostrar tabla completa ordenada por gasto descendente
+                st.markdown("**Detalle completo de todas las prácticas en esta clasificación:**")
+                df_desglose_tabla = df_desglose_agrupado.sort_values(col_precio_t, ascending=False)
+                st.dataframe(df_desglose_tabla.style.format({
+                    col_cant: lambda x: formato_arg(x, False),
+                    col_precio_t: lambda x: formato_arg(x)
+                }), use_container_width=True)
+
         else:
             st.info("Seleccioná al menos un mes para visualizar los gráficos.")
 
@@ -163,10 +194,36 @@ if uploaded_file is not None:
         fig_top_costos.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_top_costos[col_precio_t].max() * 1.3]))
         st.plotly_chart(fig_top_costos, use_container_width=True, key="graf_top_costos")
 
+        # NUEVO BLOQUE: Comparativa de Mercado entre todos los prestadores
         st.markdown("---")
-        st.subheader("🔍 Consulta Rápida: Precio de Práctica en un Centro Específico")
+        st.subheader("⚖️ Comparativa de Mercado entre Prestadores")
+        st.markdown("Compará el precio unitario promedio de una misma práctica en todos los centros que la realizan.")
         
         practicas_comunes = df[col_nomen_des].dropna().unique()
+        practica_comp = st.selectbox("Seleccioná la Práctica / Insumo a analizar:", practicas_comunes, key="prac_comparativa")
+        
+        df_comp = df[df[col_nomen_des] == practica_comp]
+        if not df_comp.empty:
+            df_comp_agrupado = df_comp.groupby(col_razon_social).agg({col_precio_u: 'mean', col_cant: 'sum'}).reset_index().sort_values(col_precio_u, ascending=True)
+            df_comp_agrupado['texto_label'] = df_comp_agrupado[col_precio_u].apply(formato_arg)
+            
+            fig_comp = px.bar(df_comp_agrupado, x=col_precio_u, y=col_razon_social, orientation='h', text='texto_label', 
+                              title=f"Precio Unitario Promedio por Centro para '{practica_comp}'", color=col_precio_u, color_continuous_scale='Reds')
+            fig_comp.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Precio Promedio: %{text}<br>Cantidad Total: %{customdata}', customdata=df_comp_agrupado[col_cant], cliponaxis=False)
+            fig_comp.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_comp_agrupado[col_precio_u].max() * 1.25]))
+            st.plotly_chart(fig_comp, use_container_width=True, key="graf_comp_mercado")
+            
+            # Tabla resumen debajo del gráfico
+            with st.expander("Ver tabla detallada de la comparativa"):
+                st.dataframe(df_comp_agrupado.sort_values(col_precio_u, ascending=False).style.format({
+                    col_precio_u: lambda x: formato_arg(x),
+                    col_cant: lambda x: formato_arg(x, False)
+                }), use_container_width=True)
+
+        # Mantenemos Consulta Rápida Intacta
+        st.markdown("---")
+        st.subheader("🔍 Consulta Rápida: Centro Específico")
+        
         col_esp1, col_esp2 = st.columns(2)
         with col_esp1:
             practica_esp = st.selectbox("1. Buscá la práctica/insumo:", practicas_comunes, key="prac_especifica")
@@ -180,7 +237,7 @@ if uploaded_file is not None:
         df_resultado_esp = df_prac_esp_filtrada[df_prac_esp_filtrada[col_razon_social] == centro_esp]
         
         if not df_resultado_esp.empty:
-            st.info(f"**Análisis de '{practica_esp}' en '{centro_esp}':**")
+            st.info(f"**Resumen de '{practica_esp}' en '{centro_esp}':**")
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Precio Promedio", formato_arg(df_resultado_esp[col_precio_u].mean()))
             m2.metric("Precio Más Bajo", formato_arg(df_resultado_esp[col_precio_u].min()))
@@ -193,8 +250,19 @@ if uploaded_file is not None:
     # TAB 4: AUDITORÍA DE AFILIADOS
     # ----------------------------------------
     with tab4:
-        st.header("Análisis de Consumo por Afiliado")
+        st.header("Análisis y Auditoría de Afiliados")
         
+        # NUEVO BLOQUE: Ranking Histórico (Top 50)
+        st.subheader("🏆 Ranking de Afiliados con Mayor Consumo")
+        st.markdown("Revisá el Top 50 de mayor gasto. Podés buscar y copiar el número del afiliado para analizarlo abajo.")
+        
+        top_afiliados = df.groupby([col_num_afiliado, col_nom_afiliado])[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=False).head(50)
+        st.dataframe(top_afiliados.style.format({col_precio_t: lambda x: formato_arg(x)}), use_container_width=True)
+        
+        st.markdown("---")
+        
+        # Mantenemos el Buscador Individual Intacto
+        st.subheader("🔍 Lupa sobre un Afiliado Específico")
         lista_afiliados = df['afiliado_display'].dropna().unique()
         
         if len(lista_afiliados) > 0:
@@ -241,13 +309,11 @@ if uploaded_file is not None:
         
         st.subheader("🚨 Detección de Prácticas Múltiples (Mismo Afiliado, Misma Fecha, Misma Práctica)")
         
-        # Filtramos los duplicados exactos
         df_duplicados = df[df.duplicated(subset=[col_fecha, col_num_afiliado, col_nomen_des], keep=False)].copy()
         
         if not df_duplicados.empty:
             df_duplicados = df_duplicados.sort_values(by=[col_fecha, col_num_afiliado])
             
-            # KPIs de Impacto Financiero
             monto_riesgo = df_duplicados[col_precio_t].sum()
             volumen_riesgo = df_duplicados[col_cant].sum()
             casos_unicos = df_duplicados.groupby([col_fecha, col_num_afiliado, col_nomen_des]).ngroups
@@ -259,7 +325,6 @@ if uploaded_file is not None:
             
             st.markdown("---")
             
-            # Gráficos Analíticos de Fraude
             col_g1, col_g2 = st.columns(2)
             with col_g1:
                 st.markdown("**Top Centros Proveedores con Duplicados**")
@@ -287,7 +352,6 @@ if uploaded_file is not None:
             st.markdown("---")
             st.subheader("Buscador Interactivo de Duplicados")
             
-            # Filtros desplegables
             f1, f2, f3 = st.columns(3)
             with f1:
                 opciones_prov = ["Todos"] + list(df_duplicados[col_razon_social].dropna().unique())
@@ -299,7 +363,6 @@ if uploaded_file is not None:
                 opciones_afil = ["Todos"] + list(df_duplicados['afiliado_display'].dropna().unique())
                 filtro_afil = st.selectbox("Filtrar por Afiliado:", opciones_afil, key="filtro_afil")
                 
-            # Aplicar filtros a la tabla
             df_tabla_dup = df_duplicados.copy()
             if filtro_prov != "Todos":
                 df_tabla_dup = df_tabla_dup[df_tabla_dup[col_razon_social] == filtro_prov]
