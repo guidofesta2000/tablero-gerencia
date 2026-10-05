@@ -475,5 +475,3 @@ if uploaded_file is not None:
 
 else:
     st.info("👈 Subí el reporte de Excel consolidado (BASE_BI) para generar la visualización.")
-else:
-    st.info("👈 Subí el reporte de Excel para generar la visualización.")
