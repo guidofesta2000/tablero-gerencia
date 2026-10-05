@@ -160,7 +160,6 @@ if uploaded_file is not None:
             fig_tram.update_layout(separators=",.", yaxis_tickformat=",.0f")
             st.plotly_chart(fig_tram, use_container_width=True, key="graf_cant_macro_linea_tramites")
 
-        # NUEVO BLOQUE: Carga Administrativa por Sede
         if col_sede in df.columns:
             st.markdown("---")
             st.subheader("🏢 Carga Administrativa por Sede Autorizadora")
@@ -236,7 +235,7 @@ if uploaded_file is not None:
                 st.dataframe(df_desglose_mostrar, use_container_width=True)
 
                 st.markdown("---")
-                st.subheader("🕵️️‍♂️ Trazabilidad de Afiliados por Práctica")
+                st.subheader("🕵️‍♂️ Trazabilidad de Afiliados por Práctica")
                 st.markdown(f"Seleccioná una práctica específica dentro de **{clasif_sel}** para ver el listado exacto de afiliados y consumos.")
 
                 practicas_en_clasif = df_desglose[col_nomen_des].dropna().unique()
@@ -323,6 +322,45 @@ if uploaded_file is not None:
                 df_comp_mostrar[col_precio_u] = df_comp_mostrar[col_precio_u].apply(formato_arg)
                 df_comp_mostrar[col_cant] = df_comp_mostrar[col_cant].apply(lambda x: formato_arg(x, False))
                 st.dataframe(df_comp_mostrar, use_container_width=True)
+
+        # NUEVO BLOQUE: Trazabilidad de Autorizaciones por Prestador y Práctica
+        st.markdown("---")
+        st.subheader("📋 Trazabilidad de Autorizaciones por Prestador y Práctica")
+        st.markdown("Revisá el detalle registro por registro filtrando primero por clínica y luego por tipo de práctica.")
+        
+        col_det1, col_det2 = st.columns(2)
+        with col_det1:
+            proveedores_disp = sorted(df[col_razon_social].dropna().unique())
+            prov_sel = st.selectbox("1. Seleccioná el Centro Proveedor:", proveedores_disp, key="prov_detalle")
+            
+        with col_det2:
+            # Filtramos las prácticas para que solo muestre las que efectivamente hace el proveedor seleccionado
+            df_prov_filtrado = df[df[col_razon_social] == prov_sel]
+            practicas_prov = sorted(df_prov_filtrado[col_nomen_des].dropna().unique())
+            prac_sel = st.selectbox("2. Seleccioná la Práctica/Insumo:", practicas_prov, key="prac_detalle")
+            
+        if prov_sel and prac_sel:
+            df_detalle = df_prov_filtrado[df_prov_filtrado[col_nomen_des] == prac_sel].copy()
+            df_detalle = df_detalle.sort_values(col_fecha)
+            
+            cols_to_show = [col_fecha, 'afiliado_display', col_cant, col_precio_u, col_precio_t, col_sede]
+            df_detalle_display = df_detalle[cols_to_show].rename(columns={
+                col_fecha: 'Fecha',
+                'afiliado_display': 'Afiliado (Nº y Nombre)',
+                col_cant: 'Cantidad',
+                col_precio_u: 'Precio Unitario',
+                col_precio_t: 'Precio Total',
+                col_sede: 'Sede'
+            })
+            
+            # Renderizamos la tabla blindada
+            df_detalle_mostrar = df_detalle_display.copy()
+            df_detalle_mostrar['Cantidad'] = df_detalle_mostrar['Cantidad'].apply(lambda x: formato_arg(x, False))
+            df_detalle_mostrar['Precio Unitario'] = df_detalle_mostrar['Precio Unitario'].apply(formato_arg)
+            df_detalle_mostrar['Precio Total'] = df_detalle_mostrar['Precio Total'].apply(formato_arg)
+            df_detalle_mostrar['Fecha'] = df_detalle_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) and hasattr(x, 'strftime') else str(x) if pd.notnull(x) else "")
+            
+            st.dataframe(df_detalle_mostrar, use_container_width=True)
 
         st.markdown("---")
         st.subheader("🔍 Consulta Rápida: Centro Específico")
