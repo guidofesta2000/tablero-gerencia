@@ -16,15 +16,24 @@ def formato_arg(valor, es_moneda=True):
     except (ValueError, TypeError):
         return str(valor)
 
-# NUEVA Función maestra: Usa estilos para el formato argentino, reseteando el índice para no colapsar PyArrow, y manteniendo el ordenamiento matemático.
+# NUEVA Función maestra: A prueba de fallos PyArrow. 
+# Mantiene el orden matemático, formatea moneda argentina y previene el cuelgue por fechas.
 def mostrar_tabla_segura(df, cols_moneda=None, cols_cantidad=None, cols_fecha=None):
     if df.empty:
         st.dataframe(df, use_container_width=True)
         return
         
-    # MAGIA TÉCNICA: Esto soluciona el "StreamlitAPIException" al resetear los "agujeros" del índice
-    df_safe = df.reset_index(drop=True)
+    # Copia segura y reseteo de índice para evitar fallos de renderizado
+    df_safe = df.copy().reset_index(drop=True)
     
+    # 1. TRATAMIENTO DE FECHAS: Las convertimos a texto puro ANTES de aplicar estilos
+    # Esto previene el error "StreamlitAPIException" clásico de PyArrow
+    if cols_fecha:
+        for c in cols_fecha:
+            if c in df_safe.columns:
+                df_safe[c] = pd.to_datetime(df_safe[c], errors='coerce').dt.strftime('%d/%m/%Y').fillna("")
+                
+    # 2. TRATAMIENTO DE NÚMEROS: Estilos aplicados solo a valores numéricos
     formato = {}
     if cols_moneda:
         for c in cols_moneda:
@@ -34,15 +43,15 @@ def mostrar_tabla_segura(df, cols_moneda=None, cols_cantidad=None, cols_fecha=No
         for c in cols_cantidad:
             if c in df_safe.columns:
                 formato[c] = lambda x: formato_arg(x, False)
-    if cols_fecha:
-        for c in cols_fecha:
-            if c in df_safe.columns:
-                formato[c] = lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) and hasattr(x, 'strftime') else str(x) if pd.notnull(x) else ""
                 
-    if formato:
-        # Al usar .style, la tabla subyacente sigue siendo matemática (ordena perfecto), pero se visualiza con el texto argentino.
-        st.dataframe(df_safe.style.format(formato), use_container_width=True)
-    else:
+    try:
+        if formato:
+            st.dataframe(df_safe.style.format(formato), use_container_width=True)
+        else:
+            st.dataframe(df_safe, use_container_width=True)
+    except Exception:
+        # PLAN DE CONTINGENCIA: Si un dato extremadamente anómalo rompe el formato, 
+        # renderizamos la tabla sin estilos para que la pantalla NUNCA se bloquee.
         st.dataframe(df_safe, use_container_width=True)
 
 st.set_page_config(page_title="Dashboard Alta Gerencia - ObSBA", layout="wide")
@@ -58,7 +67,7 @@ if uploaded_file is not None:
     # 1. Limpieza inicial de columnas
     df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
     
-    # 2. Armonización de datos (Adaptación automática para bases consolidadas de Colab)
+    # 2. Armonización de datos
     if 'monto' in df.columns:
         df['precio_total'] = df['monto']
         
@@ -84,7 +93,6 @@ if uploaded_file is not None:
     mapa_nombres_presentes = {k: v for k, v in mapa_nombres.items() if k in df.columns}
     df.rename(columns=mapa_nombres_presentes, inplace=True)
     
-    # Variables de columnas formales
     col_fecha = 'Fecha'
     col_cant = 'Cantidad'
     col_precio_u = 'Precio Unitario'
@@ -109,12 +117,11 @@ if uploaded_file is not None:
     orden_meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
     df['Mes'] = pd.Categorical(df['Mes'], categories=orden_meses, ordered=True)
     
-    # Prevenimos errores de concatenación si hay afiliados en blanco
+    # Prevenimos errores de concatenación
     df[col_num_afiliado] = df[col_num_afiliado].fillna("Sin Datos")
     df[col_nom_afiliado] = df[col_nom_afiliado].fillna("Sin Nombre")
     df['afiliado_display'] = df[col_num_afiliado].astype(str) + " - " + df[col_nom_afiliado].astype(str)
     
-    # Rellenamos sedes vacías para que no queden nulos en el gráfico
     if col_sede in df.columns:
         df[col_sede] = df[col_sede].fillna('Sin detalle de sede autorizante')
 
@@ -320,7 +327,7 @@ if uploaded_file is not None:
         st.plotly_chart(fig_top_costos, use_container_width=True, key="graf_top_costos")
 
         st.markdown("---")
-        st.subheader("⚖️️ Comparativa de Mercado entre Prestadores")
+        st.subheader("⚖️ Comparativa de Mercado entre Prestadores")
         st.markdown("Compará el precio unitario promedio de una misma práctica en todos los centros que la realizan.")
         
         practicas_comunes = df[col_nomen_des].dropna().unique()
@@ -526,7 +533,7 @@ if uploaded_file is not None:
             st.success("¡Excelente! No se detectaron autorizaciones duplicadas.")
 
         st.markdown("---")
-        st.subheader("⚠️️ Inconsistencias en el Nomenclador")
+        st.subheader("⚠️ Inconsistencias en el Nomenclador")
         
         inconsistencias = df.groupby(col_nomen_cod)[col_nomen_des].nunique().reset_index()
         codigos_problematicos = inconsistencias[inconsistencias[col_nomen_des] > 1][col_nomen_cod]
