@@ -22,10 +22,21 @@ uploaded_file = st.sidebar.file_uploader("Archivo Excel", type=["xlsx", "xls"], 
 if uploaded_file is not None:
     df = pd.read_excel(uploaded_file)
     
-    # 1. Limpieza inicial
-    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    # 1. Limpieza inicial de columnas
+    df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
     
-    # 2. RENOMBRAMIENTO ESTRUCTURAL
+    # 2. Armonización de datos (Adaptación automática para bases consolidadas de Colab)
+    # Si la base trae la columna 'monto', la duplicamos como 'precio_total' para que el tablero la reconozca
+    if 'monto' in df.columns:
+        df['precio_total'] = df['monto']
+        
+    # Calculamos el 'monto_unitario' forzosamente para que no se rompa la solapa de Comparativa de Mercado
+    if 'precio_total' in df.columns and 'cantidad' in df.columns:
+        # Reemplazamos los 0 temporariamente por 1 solo en el divisor para evitar el error matemático de "división por cero"
+        divisor = df['cantidad'].replace(0, 1)
+        df['monto_unitario'] = df['precio_total'] / divisor
+
+    # 3. RENOMBRAMIENTO ESTRUCTURAL DEFINITIVO
     mapa_nombres = {
         'fecha': 'Fecha',
         'nomen_cod': 'Código',
@@ -67,6 +78,10 @@ if uploaded_file is not None:
     
     orden_meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
     df['Mes'] = pd.Categorical(df['Mes'], categories=orden_meses, ordered=True)
+    
+    # Prevenimos errores de concatenación si hay afiliados en blanco
+    df[col_num_afiliado] = df[col_num_afiliado].fillna("Sin Datos")
+    df[col_nom_afiliado] = df[col_nom_afiliado].fillna("Sin Nombre")
     df['afiliado_display'] = df[col_num_afiliado].astype(str) + " - " + df[col_nom_afiliado].astype(str)
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -113,7 +128,7 @@ if uploaded_file is not None:
             fig_clasif.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif[col_cant].max() * 1.25]))
             st.plotly_chart(fig_clasif, use_container_width=True, key="graf_clasif_macro")
 
-        # NUEVO BLOQUE: Evolución Histórica de Cantidades y Trámites
+        # Evolución Histórica de Cantidades y Trámites
         st.markdown("---")
         st.subheader("Evolución Histórica de Autorizaciones (Operativo vs. Administrativo)")
         col_c1, col_c2 = st.columns(2)
@@ -153,7 +168,6 @@ if uploaded_file is not None:
         if meses_seleccionados:
             df_micro = df[df['Mes'].isin(meses_seleccionados)]
             
-            # Bloque Superior: Gráficos de Volumen Global
             st.subheader("Comparativa de Volumen Entre Meses Seleccionados")
             df_clasif_mes = df_micro.groupby(['Mes', col_clasif], observed=False)[col_cant].sum().reset_index()
             df_clasif_mes = df_clasif_mes[df_clasif_mes[col_cant] > 0]
@@ -173,7 +187,6 @@ if uploaded_file is not None:
             fig_clasif_micro.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif_micro[col_cant].max() * 1.25]))
             st.plotly_chart(fig_clasif_micro, use_container_width=True, key="graf_clasif_micro")
             
-            # BLOQUE: Desglose interno por Clasificación
             st.markdown("---")
             st.subheader("🔍 Desglose Interno por Categoría")
             st.markdown("Seleccioná una clasificación para ver exactamente qué prácticas la componen.")
@@ -185,7 +198,6 @@ if uploaded_file is not None:
                 df_desglose = df_micro[df_micro[col_clasif] == clasif_sel]
                 df_desglose_agrupado_gasto = df_desglose.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True)
                 
-                # Gráfico del top 15 por GASTO
                 df_desglose_top_gasto = df_desglose_agrupado_gasto.tail(15)
                 df_desglose_top_gasto['texto_label'] = df_desglose_top_gasto[col_precio_t].apply(formato_arg)
                 
@@ -195,7 +207,6 @@ if uploaded_file is not None:
                 fig_desglose_gasto.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_top_gasto[col_precio_t].max() * 1.3]))
                 st.plotly_chart(fig_desglose_gasto, use_container_width=True, key="graf_desglose_cat_gasto")
                 
-                # Mostrar tabla completa de la categoría
                 st.markdown("**Detalle completo de todas las prácticas en esta clasificación:**")
                 df_desglose_tabla = df_desglose.groupby(col_nomen_des).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index().sort_values(col_precio_t, ascending=False)
                 st.dataframe(df_desglose_tabla.style.format({
@@ -203,7 +214,6 @@ if uploaded_file is not None:
                     col_precio_t: lambda x: formato_arg(x)
                 }), use_container_width=True)
 
-                # Trazabilidad de Afiliados por Práctica
                 st.markdown("---")
                 st.subheader("🕵️‍♂️ Trazabilidad de Afiliados por Práctica")
                 st.markdown(f"Seleccioná una práctica específica dentro de **{clasif_sel}** para ver el listado exacto de afiliados y consumos.")
@@ -229,7 +239,6 @@ if uploaded_file is not None:
                         "Fecha": lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) else ""
                     }), use_container_width=True)
 
-                # NUEVO BLOQUE: Top 15 por CANTIDAD (Volumen Físico vs Trámites)
                 st.markdown("---")
                 st.subheader(f"📊 Top 15 Prácticas con Mayor Frecuencia en '{clasif_sel}'")
                 
@@ -270,7 +279,6 @@ if uploaded_file is not None:
         fig_top_costos.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_top_costos[col_precio_t].max() * 1.3]))
         st.plotly_chart(fig_top_costos, use_container_width=True, key="graf_top_costos")
 
-        # Comparativa de Mercado entre todos los prestadores
         st.markdown("---")
         st.subheader("⚖️ Comparativa de Mercado entre Prestadores")
         st.markdown("Compará el precio unitario promedio de una misma práctica en todos los centros que la realizan.")
@@ -295,7 +303,6 @@ if uploaded_file is not None:
                     col_cant: lambda x: formato_arg(x, False)
                 }), use_container_width=True)
 
-        # Consulta Rápida Intacta
         st.markdown("---")
         st.subheader("🔍 Consulta Rápida: Centro Específico")
         
@@ -466,5 +473,7 @@ if uploaded_file is not None:
         else:
             st.success("El nomenclador está limpio. Un código = Una descripción.")
 
+else:
+    st.info("👈 Subí el reporte de Excel consolidado (BASE_BI) para generar la visualización.")
 else:
     st.info("👈 Subí el reporte de Excel para generar la visualización.")
