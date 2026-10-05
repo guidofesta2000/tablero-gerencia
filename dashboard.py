@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Función para formatear moneda y números estilo argentino
+# Función para formatear moneda y números en Gráficos y Métricas (KPIs)
 def formato_arg(valor, es_moneda=True):
     if pd.isna(valor):
         return "0"
@@ -16,30 +16,27 @@ def formato_arg(valor, es_moneda=True):
     except (ValueError, TypeError):
         return str(valor)
 
-# Función maestra para mostrar tablas: mantiene el valor numérico para ordenar bien, pero formatea la vista
+# NUEVA Función maestra: Usa el motor nativo de Streamlit para no romper el ordenamiento matemático ni colapsar la web
 def mostrar_tabla_segura(df, cols_moneda=None, cols_cantidad=None, cols_fecha=None):
     if df.empty:
         st.dataframe(df, use_container_width=True)
         return
         
-    formato = {}
+    config = {}
     if cols_moneda:
         for c in cols_moneda:
             if c in df.columns:
-                formato[c] = lambda x: formato_arg(x, True)
+                config[c] = st.column_config.NumberColumn(format="$ %.2f")
     if cols_cantidad:
         for c in cols_cantidad:
             if c in df.columns:
-                formato[c] = lambda x: formato_arg(x, False)
+                config[c] = st.column_config.NumberColumn(format="%d")
     if cols_fecha:
         for c in cols_fecha:
             if c in df.columns:
-                formato[c] = lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) and hasattr(x, 'strftime') else str(x) if pd.notnull(x) else ""
+                config[c] = st.column_config.DatetimeColumn(format="DD/MM/YYYY")
                 
-    if formato:
-        st.dataframe(df.style.format(formato), use_container_width=True)
-    else:
-        st.dataframe(df, use_container_width=True)
+    st.dataframe(df, column_config=config, use_container_width=True)
 
 st.set_page_config(page_title="Dashboard Alta Gerencia - ObSBA", layout="wide")
 st.title("📊 Panel de Control Directivo - Autorizaciones ObSBA")
@@ -51,8 +48,10 @@ uploaded_file = st.sidebar.file_uploader("Archivo Excel", type=["xlsx", "xls"], 
 if uploaded_file is not None:
     df = pd.read_excel(uploaded_file)
     
+    # 1. Limpieza inicial de columnas
     df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
     
+    # 2. Armonización de datos (Adaptación automática para bases consolidadas de Colab)
     if 'monto' in df.columns:
         df['precio_total'] = df['monto']
         
@@ -60,6 +59,7 @@ if uploaded_file is not None:
         divisor = df['cantidad'].replace(0, 1)
         df['monto_unitario'] = df['precio_total'] / divisor
 
+    # 3. RENOMBRAMIENTO ESTRUCTURAL DEFINITIVO
     mapa_nombres = {
         'fecha': 'Fecha',
         'nomen_cod': 'Código',
@@ -77,6 +77,7 @@ if uploaded_file is not None:
     mapa_nombres_presentes = {k: v for k, v in mapa_nombres.items() if k in df.columns}
     df.rename(columns=mapa_nombres_presentes, inplace=True)
     
+    # Variables de columnas formales
     col_fecha = 'Fecha'
     col_cant = 'Cantidad'
     col_precio_u = 'Precio Unitario'
@@ -90,6 +91,7 @@ if uploaded_file is not None:
     col_zona = 'Zona'
     col_sede = 'Centro Autorizador'
 
+    # Tratamiento de fechas
     df[col_fecha] = pd.to_datetime(df[col_fecha], errors='coerce')
     df['Mes_Num'] = df[col_fecha].dt.month
     
@@ -100,10 +102,12 @@ if uploaded_file is not None:
     orden_meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
     df['Mes'] = pd.Categorical(df['Mes'], categories=orden_meses, ordered=True)
     
+    # Prevenimos errores de concatenación si hay afiliados en blanco
     df[col_num_afiliado] = df[col_num_afiliado].fillna("Sin Datos")
     df[col_nom_afiliado] = df[col_nom_afiliado].fillna("Sin Nombre")
     df['afiliado_display'] = df[col_num_afiliado].astype(str) + " - " + df[col_nom_afiliado].astype(str)
     
+    # Rellenamos sedes vacías para que no queden nulos en el gráfico
     if col_sede in df.columns:
         df[col_sede] = df[col_sede].fillna('Sin detalle de sede autorizante')
 
@@ -116,7 +120,7 @@ if uploaded_file is not None:
     ])
 
     # ----------------------------------------
-    # TAB 1: RESUMEN EJECUTIVO
+    # TAB 1: RESUMEN EJECUTIVO (MACRO TOTAL)
     # ----------------------------------------
     with tab1:
         st.header("Visión Global del Período Completo")
@@ -134,6 +138,7 @@ if uploaded_file is not None:
             st.subheader("Evolución Histórica de Facturación")
             df_mes_fact = df.groupby('Mes', observed=False)[col_precio_t].sum().reset_index()
             df_mes_fact = df_mes_fact[df_mes_fact[col_precio_t] > 0] 
+            
             df_mes_fact['texto_label'] = df_mes_fact[col_precio_t].apply(formato_arg)
             fig_fact = px.line(df_mes_fact, x='Mes', y=col_precio_t, markers=True, text='texto_label')
             fig_fact.update_traces(textposition='top center', textfont_size=14, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
@@ -144,6 +149,7 @@ if uploaded_file is not None:
             st.subheader("Volumen Global de Autorizaciones (Clasificación)")
             df_clasif = df.groupby(col_clasif)[col_cant].sum().reset_index().sort_values(col_cant, ascending=True)
             df_clasif['texto_label'] = df_clasif[col_cant].apply(lambda x: formato_arg(x, False))
+            
             fig_clasif = px.bar(df_clasif, x=col_cant, y=col_clasif, orientation='h', text='texto_label')
             fig_clasif.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Cantidad: %{text}<extra></extra>', cliponaxis=False)
             fig_clasif.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif[col_cant].max() * 1.25]))
@@ -158,6 +164,7 @@ if uploaded_file is not None:
             df_mes_cant = df.groupby('Mes', observed=False)[col_cant].sum().reset_index()
             df_mes_cant = df_mes_cant[df_mes_cant[col_cant] > 0]
             df_mes_cant['texto_label_cant'] = df_mes_cant[col_cant].apply(lambda x: formato_arg(x, False))
+            
             fig_cant = px.line(df_mes_cant, x='Mes', y=col_cant, markers=True, text='texto_label_cant')
             fig_cant.update_traces(textposition='top center', textfont_size=14, hovertemplate='Unidades: %{text}<extra></extra>', cliponaxis=False)
             fig_cant.update_layout(separators=",.", yaxis_tickformat=",.0f")
@@ -168,6 +175,7 @@ if uploaded_file is not None:
             df_mes_tramites = df.groupby('Mes', observed=False).size().reset_index(name='Trámites')
             df_mes_tramites = df_mes_tramites[df_mes_tramites['Trámites'] > 0]
             df_mes_tramites['texto_label_tram'] = df_mes_tramites['Trámites'].apply(lambda x: formato_arg(x, False))
+            
             fig_tram = px.line(df_mes_tramites, x='Mes', y='Trámites', markers=True, text='texto_label_tram', color_discrete_sequence=['#ff9999'])
             fig_tram.update_traces(textposition='top center', textfont_size=14, hovertemplate='Trámites: %{text}<extra></extra>', cliponaxis=False)
             fig_tram.update_layout(separators=",.", yaxis_tickformat=",.0f")
@@ -177,19 +185,23 @@ if uploaded_file is not None:
             st.markdown("---")
             st.subheader("🏢 Carga Administrativa por Sede Autorizadora")
             st.markdown("Cantidad total de trámites (órdenes) procesados históricamente en cada sede.")
+            
             df_sedes = df.groupby(col_sede).size().reset_index(name='Trámites').sort_values('Trámites', ascending=True)
             df_sedes = df_sedes[df_sedes['Trámites'] > 0]
             df_sedes['texto_label'] = df_sedes['Trámites'].apply(lambda x: formato_arg(x, False))
+            
             fig_sedes = px.bar(df_sedes, x='Trámites', y=col_sede, orientation='h', text='texto_label', color_discrete_sequence=['#4c78a8'])
             fig_sedes.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Trámites: %{text}<extra></extra>', cliponaxis=False)
             fig_sedes.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_sedes['Trámites'].max() * 1.25]))
             st.plotly_chart(fig_sedes, use_container_width=True, key="graf_tramites_sede")
 
     # ----------------------------------------
-    # TAB 2: ANÁLISIS MENSUAL
+    # TAB 2: ANÁLISIS MENSUAL (MICRO INTERACTIVO)
     # ----------------------------------------
     with tab2:
         st.header("Análisis de Volumen por Meses Específicos")
+        st.markdown("Seleccioná los meses que deseás analizar para evitar saturación visual en los gráficos.")
+        
         meses_presentes = [m for m in orden_meses if m in df['Mes'].dropna().unique()]
         meses_seleccionados = st.multiselect("Filtro de Meses:", options=meses_presentes, default=meses_presentes, key="filtro_meses_micro")
         
@@ -200,6 +212,7 @@ if uploaded_file is not None:
             df_clasif_mes = df_micro.groupby(['Mes', col_clasif], observed=False)[col_cant].sum().reset_index()
             df_clasif_mes = df_clasif_mes[df_clasif_mes[col_cant] > 0]
             df_clasif_mes['texto_label'] = df_clasif_mes[col_cant].apply(lambda x: formato_arg(x, False))
+            
             fig_clasif_mes = px.bar(df_clasif_mes, x='Mes', y=col_cant, color=col_clasif, barmode='group', text='texto_label')
             fig_clasif_mes.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Cantidad: %{text}<extra></extra>', cliponaxis=False)
             fig_clasif_mes.update_layout(separators=",.", yaxis_tickformat=",.0f", yaxis=dict(range=[0, df_clasif_mes[col_cant].max() * 1.15]))
@@ -208,6 +221,7 @@ if uploaded_file is not None:
             st.subheader("Volumen Consolidado (Solo Meses Seleccionados)")
             df_clasif_micro = df_micro.groupby(col_clasif)[col_cant].sum().reset_index().sort_values(col_cant, ascending=True)
             df_clasif_micro['texto_label'] = df_clasif_micro[col_cant].apply(lambda x: formato_arg(x, False))
+            
             fig_clasif_micro = px.bar(df_clasif_micro, x=col_cant, y=col_clasif, orientation='h', text='texto_label')
             fig_clasif_micro.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Cantidad: %{text}<extra></extra>', cliponaxis=False)
             fig_clasif_micro.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif_micro[col_cant].max() * 1.25]))
@@ -215,31 +229,40 @@ if uploaded_file is not None:
             
             st.markdown("---")
             st.subheader("🔍 Desglose Interno por Categoría")
+            st.markdown("Seleccioná una clasificación para ver exactamente qué prácticas la componen.")
+            
             clasificaciones_disp = df_micro[col_clasif].dropna().unique()
             clasif_sel = st.selectbox("Elegí la Clasificación a desglosar:", clasificaciones_disp, key="selector_clasif_desglose")
             
             if clasif_sel:
                 df_desglose = df_micro[df_micro[col_clasif] == clasif_sel]
                 df_desglose_agrupado_gasto = df_desglose.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True)
+                
                 df_desglose_top_gasto = df_desglose_agrupado_gasto.tail(15)
                 df_desglose_top_gasto['texto_label'] = df_desglose_top_gasto[col_precio_t].apply(formato_arg)
-                fig_desglose_gasto = px.bar(df_desglose_top_gasto, x=col_precio_t, y=col_nomen_des, orientation='h', text='texto_label', title=f"Top 15 Prácticas con Mayor Gasto en '{clasif_sel}'")
+                
+                fig_desglose_gasto = px.bar(df_desglose_top_gasto, x=col_precio_t, y=col_nomen_des, orientation='h', text='texto_label', 
+                                      title=f"Top 15 Prácticas con Mayor Gasto en '{clasif_sel}'")
                 fig_desglose_gasto.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
                 fig_desglose_gasto.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_top_gasto[col_precio_t].max() * 1.3]))
                 st.plotly_chart(fig_desglose_gasto, use_container_width=True, key="graf_desglose_cat_gasto")
                 
                 st.markdown("**Detalle completo de todas las prácticas en esta clasificación:**")
                 df_desglose_tabla = df_desglose.groupby(col_nomen_des).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index().sort_values(col_precio_t, ascending=False)
+                # Render nativo y seguro
                 mostrar_tabla_segura(df_desglose_tabla, cols_moneda=[col_precio_t], cols_cantidad=[col_cant])
 
                 st.markdown("---")
                 st.subheader("🕵️‍♂️ Trazabilidad de Afiliados por Práctica")
+                st.markdown(f"Seleccioná una práctica específica dentro de **{clasif_sel}** para ver el listado exacto de afiliados y consumos.")
+
                 practicas_en_clasif = df_desglose[col_nomen_des].dropna().unique()
                 practica_drilldown = st.selectbox("Elegí la práctica a auditar:", practicas_en_clasif, key="drilldown_practica")
 
                 if practica_drilldown:
                     df_drilldown = df_desglose[df_desglose[col_nomen_des] == practica_drilldown].copy()
                     df_drilldown_display = df_drilldown[[col_fecha, col_nomen_des, 'afiliado_display', col_cant, col_precio_t]].sort_values(col_fecha)
+
                     df_drilldown_display = df_drilldown_display.rename(columns={
                         col_fecha: 'Fecha',
                         col_nomen_des: 'Práctica / Insumo',
@@ -247,10 +270,12 @@ if uploaded_file is not None:
                         col_cant: 'Cantidad',
                         col_precio_t: 'Precio Total'
                     })
+
                     mostrar_tabla_segura(df_drilldown_display, cols_moneda=['Precio Total'], cols_cantidad=['Cantidad'], cols_fecha=['Fecha'])
 
                 st.markdown("---")
                 st.subheader(f"📊 Top 15 Prácticas con Mayor Frecuencia en '{clasif_sel}'")
+                
                 col_top1, col_top2 = st.columns(2)
                 with col_top1:
                     st.markdown("**Por Volumen Físico (Suma de Unidades)**")
@@ -269,6 +294,7 @@ if uploaded_file is not None:
                     fig_tram_cat.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Trámites: %{text}<extra></extra>', cliponaxis=False)
                     fig_tram_cat.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_agrupado_tram['Trámites'].max() * 1.3]))
                     st.plotly_chart(fig_tram_cat, use_container_width=True, key="graf_desglose_cat_cant_tramites")
+
         else:
             st.info("Seleccioná al menos un mes para visualizar los gráficos.")
 
@@ -281,6 +307,7 @@ if uploaded_file is not None:
         st.subheader("Top 10 Prácticas que más presupuesto consumen")
         df_top_costos = df.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True).tail(10)
         df_top_costos['texto_label'] = df_top_costos[col_precio_t].apply(formato_arg)
+        
         fig_top_costos = px.bar(df_top_costos, x=col_precio_t, y=col_nomen_des, orientation='h', text='texto_label')
         fig_top_costos.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
         fig_top_costos.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_top_costos[col_precio_t].max() * 1.3]))
@@ -288,6 +315,8 @@ if uploaded_file is not None:
 
         st.markdown("---")
         st.subheader("⚖️ Comparativa de Mercado entre Prestadores")
+        st.markdown("Compará el precio unitario promedio de una misma práctica en todos los centros que la realizan.")
+        
         practicas_comunes = df[col_nomen_des].dropna().unique()
         practica_comp = st.selectbox("Seleccioná la Práctica / Insumo a analizar:", practicas_comunes, key="prac_comparativa")
         
@@ -295,7 +324,9 @@ if uploaded_file is not None:
         if not df_comp.empty:
             df_comp_agrupado = df_comp.groupby(col_razon_social).agg({col_precio_u: 'mean', col_cant: 'sum'}).reset_index().sort_values(col_precio_u, ascending=True)
             df_comp_agrupado['texto_label'] = df_comp_agrupado[col_precio_u].apply(formato_arg)
-            fig_comp = px.bar(df_comp_agrupado, x=col_precio_u, y=col_razon_social, orientation='h', text='texto_label', title=f"Precio Unitario Promedio por Centro para '{practica_comp}'", color=col_precio_u, color_continuous_scale='Reds')
+            
+            fig_comp = px.bar(df_comp_agrupado, x=col_precio_u, y=col_razon_social, orientation='h', text='texto_label', 
+                              title=f"Precio Unitario Promedio por Centro para '{practica_comp}'", color=col_precio_u, color_continuous_scale='Reds')
             fig_comp.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Precio Promedio: %{text}<br>Cantidad Total: %{customdata}', customdata=df_comp_agrupado[col_cant], cliponaxis=False)
             fig_comp.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_comp_agrupado[col_precio_u].max() * 1.25]))
             st.plotly_chart(fig_comp, use_container_width=True, key="graf_comp_mercado")
@@ -306,17 +337,22 @@ if uploaded_file is not None:
 
         st.markdown("---")
         st.subheader("📋 Trazabilidad de Autorizaciones por Prestador y Práctica")
+        st.markdown("Revisá el detalle registro por registro filtrando primero por clínica y luego por tipo de práctica.")
+        
         col_det1, col_det2 = st.columns(2)
         with col_det1:
             proveedores_disp = sorted(df[col_razon_social].dropna().unique())
             prov_sel = st.selectbox("1. Seleccioná el Centro Proveedor:", proveedores_disp, key="prov_detalle")
+            
         with col_det2:
             df_prov_filtrado = df[df[col_razon_social] == prov_sel]
             practicas_prov = sorted(df_prov_filtrado[col_nomen_des].dropna().unique())
             prac_sel = st.selectbox("2. Seleccioná la Práctica/Insumo:", practicas_prov, key="prac_detalle")
             
         if prov_sel and prac_sel:
-            df_detalle = df_prov_filtrado[df_prov_filtrado[col_nomen_des] == prac_sel].copy().sort_values(col_fecha)
+            df_detalle = df_prov_filtrado[df_prov_filtrado[col_nomen_des] == prac_sel].copy()
+            df_detalle = df_detalle.sort_values(col_fecha)
+            
             cols_to_show = [col_fecha, 'afiliado_display', col_cant, col_precio_u, col_precio_t, col_sede]
             df_detalle_display = df_detalle[cols_to_show].rename(columns={
                 col_fecha: 'Fecha',
@@ -326,17 +362,22 @@ if uploaded_file is not None:
                 col_precio_t: 'Precio Total',
                 col_sede: 'Sede'
             })
+            
             mostrar_tabla_segura(df_detalle_display, cols_moneda=['Precio Unitario', 'Precio Total'], cols_cantidad=['Cantidad'], cols_fecha=['Fecha'])
 
         st.markdown("---")
         st.subheader("🔍 Consulta Rápida: Centro Específico")
+        
         col_esp1, col_esp2 = st.columns(2)
         with col_esp1:
             practica_esp = st.selectbox("1. Buscá la práctica/insumo:", practicas_comunes, key="prac_especifica")
+            
         df_prac_esp_filtrada = df[df[col_nomen_des] == practica_esp]
         centros_disponibles = df_prac_esp_filtrada[col_razon_social].dropna().unique()
+        
         with col_esp2:
             centro_esp = st.selectbox("2. Elegí el centro proveedor:", centros_disponibles, key="centro_especifico")
+            
         df_resultado_esp = df_prac_esp_filtrada[df_prac_esp_filtrada[col_razon_social] == centro_esp]
         
         if not df_resultado_esp.empty:
@@ -356,15 +397,19 @@ if uploaded_file is not None:
         st.header("Análisis y Auditoría de Afiliados")
         
         st.subheader("🏆 Ranking de Afiliados con Mayor Consumo")
+        st.markdown("Revisá el Top 50 de mayor gasto. Podés buscar y copiar el número del afiliado para analizarlo abajo.")
+        
         top_afiliados = df.groupby([col_num_afiliado, col_nom_afiliado])[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=False).head(50)
         mostrar_tabla_segura(top_afiliados, cols_moneda=[col_precio_t])
         
         st.markdown("---")
+        
         st.subheader("🔍 Lupa sobre un Afiliado Específico")
         lista_afiliados = df['afiliado_display'].dropna().unique()
         
         if len(lista_afiliados) > 0:
             afiliado_sel = st.selectbox("Escribí el NOMBRE o el NÚMERO del afiliado para buscarlo:", lista_afiliados, key="afiliado_buscador")
+            
             df_afil = df[df['afiliado_display'] == afiliado_sel]
             nom_afil_actual = df_afil[col_nom_afiliado].iloc[0]
             num_afil_actual = df_afil[col_num_afiliado].iloc[0]
@@ -383,6 +428,7 @@ if uploaded_file is not None:
                 df_afil_mes = df_afil.groupby('Mes', observed=False)[col_precio_t].sum().reset_index()
                 df_afil_mes = df_afil_mes[df_afil_mes[col_precio_t] > 0]
                 df_afil_mes['texto_label'] = df_afil_mes[col_precio_t].apply(formato_arg)
+                
                 fig_afil_mes = px.bar(df_afil_mes, x='Mes', y=col_precio_t, text='texto_label', title="Consumo en el Tiempo")
                 fig_afil_mes.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
                 fig_afil_mes.update_layout(separators=",.", yaxis_tickformat=",.0f", yaxis=dict(range=[0, df_afil_mes[col_precio_t].max() * 1.3]))
@@ -393,16 +439,18 @@ if uploaded_file is not None:
             mostrar_tabla_segura(df_afil_display, cols_moneda=[col_precio_u, col_precio_t], cols_cantidad=[col_cant], cols_fecha=[col_fecha])
 
     # ----------------------------------------
-    # TAB 5: CALIDAD Y DUPLICADOS
+    # TAB 5: CALIDAD Y DUPLICADOS (PREVENCIÓN DE FRAUDE)
     # ----------------------------------------
     with tab5:
         st.header("Auditoría de Duplicados y Control de Nomenclador")
         
         st.subheader("🚨 Detección de Prácticas Múltiples (Mismo Afiliado, Misma Fecha, Misma Práctica)")
+        
         df_duplicados = df[df.duplicated(subset=[col_fecha, col_num_afiliado, col_nomen_des], keep=False)].copy()
         
         if not df_duplicados.empty:
             df_duplicados = df_duplicados.sort_values(by=[col_fecha, col_num_afiliado])
+            
             monto_riesgo = df_duplicados[col_precio_t].sum()
             volumen_riesgo = df_duplicados[col_cant].sum()
             casos_unicos = df_duplicados.groupby([col_fecha, col_num_afiliado, col_nomen_des]).ngroups
@@ -413,6 +461,7 @@ if uploaded_file is not None:
             kpi3.metric("Volumen Extra Involucrado", formato_arg(volumen_riesgo, False))
             
             st.markdown("---")
+            
             col_g1, col_g2 = st.columns(2)
             with col_g1:
                 st.markdown("**Top Centros Proveedores con Duplicados**")
@@ -439,6 +488,7 @@ if uploaded_file is not None:
 
             st.markdown("---")
             st.subheader("Buscador Interactivo de Duplicados")
+            
             f1, f2, f3 = st.columns(3)
             with f1:
                 opciones_prov = ["Todos"] + list(df_duplicados[col_razon_social].dropna().unique())
@@ -459,13 +509,20 @@ if uploaded_file is not None:
                 df_tabla_dup = df_tabla_dup[df_tabla_dup['afiliado_display'] == filtro_afil]
 
             df_tabla_dup_display = df_tabla_dup[[col_fecha, col_num_afiliado, col_nom_afiliado, col_nomen_des, col_cant, col_precio_t, col_razon_social]]
-            mostrar_tabla_segura(df_tabla_dup_display, cols_moneda=[col_precio_t], cols_cantidad=[col_cant], cols_fecha=[col_fecha])
+            
+            df_tabla_dup_display = df_tabla_dup_display.rename(columns={
+                col_fecha: 'Fecha',
+                col_cant: 'Cantidad',
+                col_precio_t: 'Precio Total'
+            })
+            mostrar_tabla_segura(df_tabla_dup_display, cols_moneda=['Precio Total'], cols_cantidad=['Cantidad'], cols_fecha=['Fecha'])
             
         else:
             st.success("¡Excelente! No se detectaron autorizaciones duplicadas.")
 
         st.markdown("---")
         st.subheader("⚠️ Inconsistencias en el Nomenclador")
+        
         inconsistencias = df.groupby(col_nomen_cod)[col_nomen_des].nunique().reset_index()
         codigos_problematicos = inconsistencias[inconsistencias[col_nomen_des] > 1][col_nomen_cod]
         
