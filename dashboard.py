@@ -2,15 +2,20 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Función para formatear moneda y números estilo argentino
+# Función para formatear moneda y números estilo argentino (AHORA BLINDADA)
 def formato_arg(valor, es_moneda=True):
     if pd.isna(valor):
         return "0"
-    if es_moneda:
-        texto = f"${valor:,.2f}"
-    else:
-        texto = f"{valor:,.0f}"
-    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+    try:
+        valor_num = float(valor)
+        if es_moneda:
+            texto = f"${valor_num:,.2f}"
+        else:
+            texto = f"{valor_num:,.0f}"
+        return texto.replace(",", "X").replace(".", ",").replace("X", ".")
+    except (ValueError, TypeError):
+        # Si el dato está corrupto o es texto puro, lo devuelve intacto sin romper la página
+        return str(valor)
 
 st.set_page_config(page_title="Dashboard Alta Gerencia - ObSBA", layout="wide")
 st.title("📊 Panel de Control Directivo - Autorizaciones ObSBA")
@@ -26,13 +31,10 @@ if uploaded_file is not None:
     df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
     
     # 2. Armonización de datos (Adaptación automática para bases consolidadas de Colab)
-    # Si la base trae la columna 'monto', la duplicamos como 'precio_total' para que el tablero la reconozca
     if 'monto' in df.columns:
         df['precio_total'] = df['monto']
         
-    # Calculamos el 'monto_unitario' forzosamente para que no se rompa la solapa de Comparativa de Mercado
     if 'precio_total' in df.columns and 'cantidad' in df.columns:
-        # Reemplazamos los 0 temporariamente por 1 solo en el divisor para evitar el error matemático de "división por cero"
         divisor = df['cantidad'].replace(0, 1)
         df['monto_unitario'] = df['precio_total'] / divisor
 
@@ -128,7 +130,6 @@ if uploaded_file is not None:
             fig_clasif.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif[col_cant].max() * 1.25]))
             st.plotly_chart(fig_clasif, use_container_width=True, key="graf_clasif_macro")
 
-        # Evolución Histórica de Cantidades y Trámites
         st.markdown("---")
         st.subheader("Evolución Histórica de Autorizaciones (Operativo vs. Administrativo)")
         col_c1, col_c2 = st.columns(2)
@@ -209,10 +210,12 @@ if uploaded_file is not None:
                 
                 st.markdown("**Detalle completo de todas las prácticas en esta clasificación:**")
                 df_desglose_tabla = df_desglose.groupby(col_nomen_des).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index().sort_values(col_precio_t, ascending=False)
-                st.dataframe(df_desglose_tabla.style.format({
-                    col_cant: lambda x: formato_arg(x, False),
-                    col_precio_t: lambda x: formato_arg(x)
-                }), use_container_width=True)
+                
+                # Renderizamos la tabla blindada
+                df_desglose_mostrar = df_desglose_tabla.copy()
+                df_desglose_mostrar[col_cant] = df_desglose_mostrar[col_cant].apply(lambda x: formato_arg(x, False))
+                df_desglose_mostrar[col_precio_t] = df_desglose_mostrar[col_precio_t].apply(formato_arg)
+                st.dataframe(df_desglose_mostrar, use_container_width=True)
 
                 st.markdown("---")
                 st.subheader("🕵️‍♂️ Trazabilidad de Afiliados por Práctica")
@@ -233,11 +236,12 @@ if uploaded_file is not None:
                         col_precio_t: 'Precio Total'
                     })
 
-                    st.dataframe(df_drilldown_display.style.format({
-                        "Cantidad": lambda x: formato_arg(x, False),
-                        "Precio Total": lambda x: formato_arg(x),
-                        "Fecha": lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) else ""
-                    }), use_container_width=True)
+                    # Renderizamos la tabla blindada
+                    df_drilldown_mostrar = df_drilldown_display.copy()
+                    df_drilldown_mostrar['Cantidad'] = df_drilldown_mostrar['Cantidad'].apply(lambda x: formato_arg(x, False))
+                    df_drilldown_mostrar['Precio Total'] = df_drilldown_mostrar['Precio Total'].apply(formato_arg)
+                    df_drilldown_mostrar['Fecha'] = df_drilldown_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) and hasattr(x, 'strftime') else str(x) if pd.notnull(x) else "")
+                    st.dataframe(df_drilldown_mostrar, use_container_width=True)
 
                 st.markdown("---")
                 st.subheader(f"📊 Top 15 Prácticas con Mayor Frecuencia en '{clasif_sel}'")
@@ -298,10 +302,11 @@ if uploaded_file is not None:
             st.plotly_chart(fig_comp, use_container_width=True, key="graf_comp_mercado")
             
             with st.expander("Ver tabla detallada de la comparativa"):
-                st.dataframe(df_comp_agrupado.sort_values(col_precio_u, ascending=False).style.format({
-                    col_precio_u: lambda x: formato_arg(x),
-                    col_cant: lambda x: formato_arg(x, False)
-                }), use_container_width=True)
+                # Renderizamos la tabla blindada
+                df_comp_mostrar = df_comp_agrupado.sort_values(col_precio_u, ascending=False).copy()
+                df_comp_mostrar[col_precio_u] = df_comp_mostrar[col_precio_u].apply(formato_arg)
+                df_comp_mostrar[col_cant] = df_comp_mostrar[col_cant].apply(lambda x: formato_arg(x, False))
+                st.dataframe(df_comp_mostrar, use_container_width=True)
 
         st.markdown("---")
         st.subheader("🔍 Consulta Rápida: Centro Específico")
@@ -338,7 +343,11 @@ if uploaded_file is not None:
         st.markdown("Revisá el Top 50 de mayor gasto. Podés buscar y copiar el número del afiliado para analizarlo abajo.")
         
         top_afiliados = df.groupby([col_num_afiliado, col_nom_afiliado])[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=False).head(50)
-        st.dataframe(top_afiliados.style.format({col_precio_t: lambda x: formato_arg(x)}), use_container_width=True)
+        
+        # Renderizamos la tabla blindada
+        top_afil_mostrar = top_afiliados.copy()
+        top_afil_mostrar[col_precio_t] = top_afil_mostrar[col_precio_t].apply(formato_arg)
+        st.dataframe(top_afil_mostrar, use_container_width=True)
         
         st.markdown("---")
         
@@ -375,11 +384,12 @@ if uploaded_file is not None:
             st.subheader("Historial de Consumos del Afiliado")
             df_afil_display = df_afil[[col_fecha, col_nomen_des, col_cant, col_precio_u, col_precio_t, col_razon_social, col_sede]].sort_values(col_fecha)
             
-            st.dataframe(df_afil_display.style.format({
-                "Precio Unitario": lambda x: formato_arg(x),
-                "Precio Total": lambda x: formato_arg(x),
-                "Fecha": lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) else ""
-            }), use_container_width=True)
+            # Renderizamos la tabla blindada
+            df_afil_mostrar = df_afil_display.copy()
+            df_afil_mostrar['Precio Unitario'] = df_afil_mostrar['Precio Unitario'].apply(formato_arg)
+            df_afil_mostrar['Precio Total'] = df_afil_mostrar['Precio Total'].apply(formato_arg)
+            df_afil_mostrar['Fecha'] = df_afil_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) and hasattr(x, 'strftime') else str(x) if pd.notnull(x) else "")
+            st.dataframe(df_afil_mostrar, use_container_width=True)
 
     # ----------------------------------------
     # TAB 5: CALIDAD Y DUPLICADOS (PREVENCIÓN DE FRAUDE)
@@ -452,10 +462,12 @@ if uploaded_file is not None:
                 df_tabla_dup = df_tabla_dup[df_tabla_dup['afiliado_display'] == filtro_afil]
 
             df_tabla_dup_display = df_tabla_dup[[col_fecha, col_num_afiliado, col_nom_afiliado, col_nomen_des, col_cant, col_precio_t, col_razon_social]]
-            st.dataframe(df_tabla_dup_display.style.format({
-                "Precio Total": lambda x: formato_arg(x),
-                "Fecha": lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) else ""
-            }), use_container_width=True)
+            
+            # Renderizamos la tabla blindada
+            df_tabla_dup_mostrar = df_tabla_dup_display.copy()
+            df_tabla_dup_mostrar['Precio Total'] = df_tabla_dup_mostrar['Precio Total'].apply(formato_arg)
+            df_tabla_dup_mostrar['Fecha'] = df_tabla_dup_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) and hasattr(x, 'strftime') else str(x) if pd.notnull(x) else "")
+            st.dataframe(df_tabla_dup_mostrar, use_container_width=True)
             
         else:
             st.success("¡Excelente! No se detectaron autorizaciones duplicadas.")
