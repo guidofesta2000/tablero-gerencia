@@ -85,6 +85,10 @@ if uploaded_file is not None:
     df[col_num_afiliado] = df[col_num_afiliado].fillna("Sin Datos")
     df[col_nom_afiliado] = df[col_nom_afiliado].fillna("Sin Nombre")
     df['afiliado_display'] = df[col_num_afiliado].astype(str) + " - " + df[col_nom_afiliado].astype(str)
+    
+    # Rellenamos sedes vacías para que no queden nulos en el gráfico
+    if col_sede in df.columns:
+        df[col_sede] = df[col_sede].fillna('Sin detalle de sede autorizante')
 
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📈 1. Resumen Ejecutivo (Macro)", 
@@ -156,6 +160,21 @@ if uploaded_file is not None:
             fig_tram.update_layout(separators=",.", yaxis_tickformat=",.0f")
             st.plotly_chart(fig_tram, use_container_width=True, key="graf_cant_macro_linea_tramites")
 
+        # NUEVO BLOQUE: Carga Administrativa por Sede
+        if col_sede in df.columns:
+            st.markdown("---")
+            st.subheader("🏢 Carga Administrativa por Sede Autorizadora")
+            st.markdown("Cantidad total de trámites (órdenes) procesados históricamente en cada sede.")
+            
+            df_sedes = df.groupby(col_sede).size().reset_index(name='Trámites').sort_values('Trámites', ascending=True)
+            df_sedes = df_sedes[df_sedes['Trámites'] > 0]
+            df_sedes['texto_label'] = df_sedes['Trámites'].apply(lambda x: formato_arg(x, False))
+            
+            fig_sedes = px.bar(df_sedes, x='Trámites', y=col_sede, orientation='h', text='texto_label', color_discrete_sequence=['#4c78a8'])
+            fig_sedes.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Trámites: %{text}<extra></extra>', cliponaxis=False)
+            fig_sedes.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_sedes['Trámites'].max() * 1.25]))
+            st.plotly_chart(fig_sedes, use_container_width=True, key="graf_tramites_sede")
+
     # ----------------------------------------
     # TAB 2: ANÁLISIS MENSUAL (MICRO INTERACTIVO)
     # ----------------------------------------
@@ -211,14 +230,13 @@ if uploaded_file is not None:
                 st.markdown("**Detalle completo de todas las prácticas en esta clasificación:**")
                 df_desglose_tabla = df_desglose.groupby(col_nomen_des).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index().sort_values(col_precio_t, ascending=False)
                 
-                # Renderizamos la tabla blindada
                 df_desglose_mostrar = df_desglose_tabla.copy()
                 df_desglose_mostrar[col_cant] = df_desglose_mostrar[col_cant].apply(lambda x: formato_arg(x, False))
                 df_desglose_mostrar[col_precio_t] = df_desglose_mostrar[col_precio_t].apply(formato_arg)
                 st.dataframe(df_desglose_mostrar, use_container_width=True)
 
                 st.markdown("---")
-                st.subheader("🕵️‍♂️ Trazabilidad de Afiliados por Práctica")
+                st.subheader("🕵️️‍♂️ Trazabilidad de Afiliados por Práctica")
                 st.markdown(f"Seleccioná una práctica específica dentro de **{clasif_sel}** para ver el listado exacto de afiliados y consumos.")
 
                 practicas_en_clasif = df_desglose[col_nomen_des].dropna().unique()
@@ -236,7 +254,6 @@ if uploaded_file is not None:
                         col_precio_t: 'Precio Total'
                     })
 
-                    # Renderizamos la tabla blindada
                     df_drilldown_mostrar = df_drilldown_display.copy()
                     df_drilldown_mostrar['Cantidad'] = df_drilldown_mostrar['Cantidad'].apply(lambda x: formato_arg(x, False))
                     df_drilldown_mostrar['Precio Total'] = df_drilldown_mostrar['Precio Total'].apply(formato_arg)
@@ -302,7 +319,6 @@ if uploaded_file is not None:
             st.plotly_chart(fig_comp, use_container_width=True, key="graf_comp_mercado")
             
             with st.expander("Ver tabla detallada de la comparativa"):
-                # Renderizamos la tabla blindada
                 df_comp_mostrar = df_comp_agrupado.sort_values(col_precio_u, ascending=False).copy()
                 df_comp_mostrar[col_precio_u] = df_comp_mostrar[col_precio_u].apply(formato_arg)
                 df_comp_mostrar[col_cant] = df_comp_mostrar[col_cant].apply(lambda x: formato_arg(x, False))
@@ -344,7 +360,6 @@ if uploaded_file is not None:
         
         top_afiliados = df.groupby([col_num_afiliado, col_nom_afiliado])[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=False).head(50)
         
-        # Renderizamos la tabla blindada
         top_afil_mostrar = top_afiliados.copy()
         top_afil_mostrar[col_precio_t] = top_afil_mostrar[col_precio_t].apply(formato_arg)
         st.dataframe(top_afil_mostrar, use_container_width=True)
@@ -384,7 +399,6 @@ if uploaded_file is not None:
             st.subheader("Historial de Consumos del Afiliado")
             df_afil_display = df_afil[[col_fecha, col_nomen_des, col_cant, col_precio_u, col_precio_t, col_razon_social, col_sede]].sort_values(col_fecha)
             
-            # Renderizamos la tabla blindada
             df_afil_mostrar = df_afil_display.copy()
             df_afil_mostrar['Precio Unitario'] = df_afil_mostrar['Precio Unitario'].apply(formato_arg)
             df_afil_mostrar['Precio Total'] = df_afil_mostrar['Precio Total'].apply(formato_arg)
@@ -463,7 +477,6 @@ if uploaded_file is not None:
 
             df_tabla_dup_display = df_tabla_dup[[col_fecha, col_num_afiliado, col_nom_afiliado, col_nomen_des, col_cant, col_precio_t, col_razon_social]]
             
-            # Renderizamos la tabla blindada
             df_tabla_dup_mostrar = df_tabla_dup_display.copy()
             df_tabla_dup_mostrar['Precio Total'] = df_tabla_dup_mostrar['Precio Total'].apply(formato_arg)
             df_tabla_dup_mostrar['Fecha'] = df_tabla_dup_mostrar['Fecha'].apply(lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) and hasattr(x, 'strftime') else str(x) if pd.notnull(x) else "")
