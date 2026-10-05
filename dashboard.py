@@ -85,7 +85,7 @@ if uploaded_file is not None:
         
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Facturación Total", formato_arg(df[col_precio_t].sum()))
-        col2.metric("Volumen Total (Cantidades)", formato_arg(df[col_cant].sum(), False))
+        col2.metric("Volumen Total (Suma Unidades)", formato_arg(df[col_cant].sum(), False))
         col3.metric("Afiliados Atendidos", formato_arg(df[col_num_afiliado].nunique(), False))
         col4.metric("Total de Prestadores", formato_arg(df[col_razon_social].nunique(), False))
         
@@ -113,19 +113,32 @@ if uploaded_file is not None:
             fig_clasif.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_clasif[col_cant].max() * 1.25]))
             st.plotly_chart(fig_clasif, use_container_width=True, key="graf_clasif_macro")
 
-        # NUEVO BLOQUE: Evolución Histórica de Cantidades
+        # NUEVO BLOQUE: Evolución Histórica de Cantidades y Trámites
         st.markdown("---")
-        st.subheader("Evolución Histórica de Autorizaciones (Volumen)")
+        st.subheader("Evolución Histórica de Autorizaciones (Operativo vs. Administrativo)")
+        col_c1, col_c2 = st.columns(2)
         
-        df_mes_cant = df.groupby('Mes', observed=False)[col_cant].sum().reset_index()
-        df_mes_cant = df_mes_cant[df_mes_cant[col_cant] > 0]
-        
-        df_mes_cant['texto_label_cant'] = df_mes_cant[col_cant].apply(lambda x: formato_arg(x, False))
-        fig_cant = px.line(df_mes_cant, x='Mes', y=col_cant, markers=True, text='texto_label_cant')
-        # Es un gráfico de líneas, así que no usamos textangle=0 para evitar el error previo
-        fig_cant.update_traces(textposition='top center', textfont_size=14, hovertemplate='Cantidad: %{text}<extra></extra>', cliponaxis=False)
-        fig_cant.update_layout(separators=",.", yaxis_tickformat=",.0f")
-        st.plotly_chart(fig_cant, use_container_width=True, key="graf_cant_macro_linea")
+        with col_c1:
+            st.markdown("**Volumen Físico (Suma de unidades/insumos)**")
+            df_mes_cant = df.groupby('Mes', observed=False)[col_cant].sum().reset_index()
+            df_mes_cant = df_mes_cant[df_mes_cant[col_cant] > 0]
+            df_mes_cant['texto_label_cant'] = df_mes_cant[col_cant].apply(lambda x: formato_arg(x, False))
+            
+            fig_cant = px.line(df_mes_cant, x='Mes', y=col_cant, markers=True, text='texto_label_cant')
+            fig_cant.update_traces(textposition='top center', textfont_size=14, hovertemplate='Unidades: %{text}<extra></extra>', cliponaxis=False)
+            fig_cant.update_layout(separators=",.", yaxis_tickformat=",.0f")
+            st.plotly_chart(fig_cant, use_container_width=True, key="graf_cant_macro_linea_unidades")
+
+        with col_c2:
+            st.markdown("**Carga Administrativa (Cantidad de trámites/órdenes)**")
+            df_mes_tramites = df.groupby('Mes', observed=False).size().reset_index(name='Trámites')
+            df_mes_tramites = df_mes_tramites[df_mes_tramites['Trámites'] > 0]
+            df_mes_tramites['texto_label_tram'] = df_mes_tramites['Trámites'].apply(lambda x: formato_arg(x, False))
+            
+            fig_tram = px.line(df_mes_tramites, x='Mes', y='Trámites', markers=True, text='texto_label_tram', color_discrete_sequence=['#ff9999'])
+            fig_tram.update_traces(textposition='top center', textfont_size=14, hovertemplate='Trámites: %{text}<extra></extra>', cliponaxis=False)
+            fig_tram.update_layout(separators=",.", yaxis_tickformat=",.0f")
+            st.plotly_chart(fig_tram, use_container_width=True, key="graf_cant_macro_linea_tramites")
 
     # ----------------------------------------
     # TAB 2: ANÁLISIS MENSUAL (MICRO INTERACTIVO)
@@ -170,10 +183,9 @@ if uploaded_file is not None:
             
             if clasif_sel:
                 df_desglose = df_micro[df_micro[col_clasif] == clasif_sel]
-                df_desglose_agrupado = df_desglose.groupby(col_nomen_des).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index()
+                df_desglose_agrupado_gasto = df_desglose.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True)
                 
                 # Gráfico del top 15 por GASTO
-                df_desglose_agrupado_gasto = df_desglose_agrupado.sort_values(col_precio_t, ascending=True)
                 df_desglose_top_gasto = df_desglose_agrupado_gasto.tail(15)
                 df_desglose_top_gasto['texto_label'] = df_desglose_top_gasto[col_precio_t].apply(formato_arg)
                 
@@ -183,9 +195,9 @@ if uploaded_file is not None:
                 fig_desglose_gasto.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_top_gasto[col_precio_t].max() * 1.3]))
                 st.plotly_chart(fig_desglose_gasto, use_container_width=True, key="graf_desglose_cat_gasto")
                 
-                # Mostrar tabla completa
+                # Mostrar tabla completa de la categoría
                 st.markdown("**Detalle completo de todas las prácticas en esta clasificación:**")
-                df_desglose_tabla = df_desglose_agrupado.sort_values(col_precio_t, ascending=False)
+                df_desglose_tabla = df_desglose.groupby(col_nomen_des).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index().sort_values(col_precio_t, ascending=False)
                 st.dataframe(df_desglose_tabla.style.format({
                     col_cant: lambda x: formato_arg(x, False),
                     col_precio_t: lambda x: formato_arg(x)
@@ -217,19 +229,28 @@ if uploaded_file is not None:
                         "Fecha": lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) else ""
                     }), use_container_width=True)
 
-                # NUEVO BLOQUE: Top 15 por CANTIDAD (Volumen)
+                # NUEVO BLOQUE: Top 15 por CANTIDAD (Volumen Físico vs Trámites)
                 st.markdown("---")
-                st.subheader(f"📊 Top 15 Prácticas con Mayor Frecuencia/Cantidad en '{clasif_sel}'")
+                st.subheader(f"📊 Top 15 Prácticas con Mayor Frecuencia en '{clasif_sel}'")
                 
-                df_desglose_agrupado_cant = df_desglose_agrupado.sort_values(col_cant, ascending=True)
-                df_desglose_top_cant = df_desglose_agrupado_cant.tail(15)
-                df_desglose_top_cant['texto_label_cant'] = df_desglose_top_cant[col_cant].apply(lambda x: formato_arg(x, False))
-                
-                fig_desglose_cant = px.bar(df_desglose_top_cant, x=col_cant, y=col_nomen_des, orientation='h', text='texto_label_cant',
-                                           color_discrete_sequence=['#ff9999']) # Color diferencial para no confundir con gasto
-                fig_desglose_cant.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Cantidad: %{text}<extra></extra>', cliponaxis=False)
-                fig_desglose_cant.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_top_cant[col_cant].max() * 1.3]))
-                st.plotly_chart(fig_desglose_cant, use_container_width=True, key="graf_desglose_cat_cant")
+                col_top1, col_top2 = st.columns(2)
+                with col_top1:
+                    st.markdown("**Por Volumen Físico (Suma de Unidades)**")
+                    df_desglose_agrupado_cant = df_desglose.groupby(col_nomen_des)[col_cant].sum().reset_index().sort_values(col_cant, ascending=True).tail(15)
+                    df_desglose_agrupado_cant['texto_label'] = df_desglose_agrupado_cant[col_cant].apply(lambda x: formato_arg(x, False))
+                    fig_cant_cat = px.bar(df_desglose_agrupado_cant, x=col_cant, y=col_nomen_des, orientation='h', text='texto_label', color_discrete_sequence=['#ff9999'])
+                    fig_cant_cat.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Unidades: %{text}<extra></extra>', cliponaxis=False)
+                    fig_cant_cat.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_agrupado_cant[col_cant].max() * 1.3]))
+                    st.plotly_chart(fig_cant_cat, use_container_width=True, key="graf_desglose_cat_cant_unidades")
+                    
+                with col_top2:
+                    st.markdown("**Por Carga Administrativa (Cantidad de Trámites)**")
+                    df_desglose_agrupado_tram = df_desglose.groupby(col_nomen_des).size().reset_index(name='Trámites').sort_values('Trámites', ascending=True).tail(15)
+                    df_desglose_agrupado_tram['texto_label'] = df_desglose_agrupado_tram['Trámites'].apply(lambda x: formato_arg(x, False))
+                    fig_tram_cat = px.bar(df_desglose_agrupado_tram, x='Trámites', y=col_nomen_des, orientation='h', text='texto_label', color_discrete_sequence=['#ffcc99'])
+                    fig_tram_cat.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Trámites: %{text}<extra></extra>', cliponaxis=False)
+                    fig_tram_cat.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_agrupado_tram['Trámites'].max() * 1.3]))
+                    st.plotly_chart(fig_tram_cat, use_container_width=True, key="graf_desglose_cat_cant_tramites")
 
         else:
             st.info("Seleccioná al menos un mes para visualizar los gráficos.")
