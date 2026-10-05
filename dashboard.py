@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 
-# Función para formatear moneda y números en Gráficos y Métricas (KPIs)
+# Función para formatear moneda y números en Gráficos y Tablas
 def formato_arg(valor, es_moneda=True):
     if pd.isna(valor):
         return "0"
@@ -16,27 +16,34 @@ def formato_arg(valor, es_moneda=True):
     except (ValueError, TypeError):
         return str(valor)
 
-# NUEVA Función maestra: Usa el motor nativo de Streamlit para no romper el ordenamiento matemático ni colapsar la web
+# NUEVA Función maestra: Usa estilos para el formato argentino, reseteando el índice para no colapsar PyArrow, y manteniendo el ordenamiento matemático.
 def mostrar_tabla_segura(df, cols_moneda=None, cols_cantidad=None, cols_fecha=None):
     if df.empty:
         st.dataframe(df, use_container_width=True)
         return
         
-    config = {}
+    # MAGIA TÉCNICA: Esto soluciona el "StreamlitAPIException" al resetear los "agujeros" del índice
+    df_safe = df.reset_index(drop=True)
+    
+    formato = {}
     if cols_moneda:
         for c in cols_moneda:
-            if c in df.columns:
-                config[c] = st.column_config.NumberColumn(format="$ %.2f")
+            if c in df_safe.columns:
+                formato[c] = lambda x: formato_arg(x, True)
     if cols_cantidad:
         for c in cols_cantidad:
-            if c in df.columns:
-                config[c] = st.column_config.NumberColumn(format="%d")
+            if c in df_safe.columns:
+                formato[c] = lambda x: formato_arg(x, False)
     if cols_fecha:
         for c in cols_fecha:
-            if c in df.columns:
-                config[c] = st.column_config.DatetimeColumn(format="DD/MM/YYYY")
+            if c in df_safe.columns:
+                formato[c] = lambda x: x.strftime('%d/%m/%Y') if pd.notnull(x) and hasattr(x, 'strftime') else str(x) if pd.notnull(x) else ""
                 
-    st.dataframe(df, column_config=config, use_container_width=True)
+    if formato:
+        # Al usar .style, la tabla subyacente sigue siendo matemática (ordena perfecto), pero se visualiza con el texto argentino.
+        st.dataframe(df_safe.style.format(formato), use_container_width=True)
+    else:
+        st.dataframe(df_safe, use_container_width=True)
 
 st.set_page_config(page_title="Dashboard Alta Gerencia - ObSBA", layout="wide")
 st.title("📊 Panel de Control Directivo - Autorizaciones ObSBA")
@@ -249,7 +256,6 @@ if uploaded_file is not None:
                 
                 st.markdown("**Detalle completo de todas las prácticas en esta clasificación:**")
                 df_desglose_tabla = df_desglose.groupby(col_nomen_des).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index().sort_values(col_precio_t, ascending=False)
-                # Render nativo y seguro
                 mostrar_tabla_segura(df_desglose_tabla, cols_moneda=[col_precio_t], cols_cantidad=[col_cant])
 
                 st.markdown("---")
@@ -314,7 +320,7 @@ if uploaded_file is not None:
         st.plotly_chart(fig_top_costos, use_container_width=True, key="graf_top_costos")
 
         st.markdown("---")
-        st.subheader("⚖️ Comparativa de Mercado entre Prestadores")
+        st.subheader("⚖️️ Comparativa de Mercado entre Prestadores")
         st.markdown("Compará el precio unitario promedio de una misma práctica en todos los centros que la realizan.")
         
         practicas_comunes = df[col_nomen_des].dropna().unique()
@@ -509,7 +515,6 @@ if uploaded_file is not None:
                 df_tabla_dup = df_tabla_dup[df_tabla_dup['afiliado_display'] == filtro_afil]
 
             df_tabla_dup_display = df_tabla_dup[[col_fecha, col_num_afiliado, col_nom_afiliado, col_nomen_des, col_cant, col_precio_t, col_razon_social]]
-            
             df_tabla_dup_display = df_tabla_dup_display.rename(columns={
                 col_fecha: 'Fecha',
                 col_cant: 'Cantidad',
@@ -521,7 +526,7 @@ if uploaded_file is not None:
             st.success("¡Excelente! No se detectaron autorizaciones duplicadas.")
 
         st.markdown("---")
-        st.subheader("⚠️ Inconsistencias en el Nomenclador")
+        st.subheader("⚠️️ Inconsistencias en el Nomenclador")
         
         inconsistencias = df.groupby(col_nomen_cod)[col_nomen_des].nunique().reset_index()
         codigos_problematicos = inconsistencias[inconsistencias[col_nomen_des] > 1][col_nomen_cod]
