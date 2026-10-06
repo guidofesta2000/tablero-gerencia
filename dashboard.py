@@ -16,7 +16,7 @@ def formato_arg(valor, es_moneda=True):
     except (ValueError, TypeError):
         return str(valor)
 
-# NUEVA Función maestra: A prueba de fallos PyArrow. 
+# Función maestra: A prueba de fallos PyArrow. 
 # Mantiene el orden matemático, formatea moneda argentina y previene el cuelgue por fechas.
 def mostrar_tabla_segura(df, cols_moneda=None, cols_cantidad=None, cols_fecha=None):
     if df.empty:
@@ -27,7 +27,6 @@ def mostrar_tabla_segura(df, cols_moneda=None, cols_cantidad=None, cols_fecha=No
     df_safe = df.copy().reset_index(drop=True)
     
     # 1. TRATAMIENTO DE FECHAS: Las convertimos a texto puro ANTES de aplicar estilos
-    # Esto previene el error "StreamlitAPIException" clásico de PyArrow
     if cols_fecha:
         for c in cols_fecha:
             if c in df_safe.columns:
@@ -316,6 +315,18 @@ if uploaded_file is not None:
     # ----------------------------------------
     with tab3:
         st.header("Análisis de Costos y Proveedores")
+
+        st.subheader("💰 Costos Totales por Centro Proveedor")
+        st.markdown("Listado completo de facturación acumulada por cada centro de salud.")
+        
+        df_costos_centro = df.groupby(col_razon_social)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=False)
+        df_costos_centro = df_costos_centro.rename(columns={
+            col_razon_social: 'Centro Proveedor',
+            col_precio_t: 'Precio Total'
+        })
+        mostrar_tabla_segura(df_costos_centro, cols_moneda=['Precio Total'])
+
+        st.markdown("---")
         
         st.subheader("Top 10 Prácticas que más presupuesto consumen")
         df_top_costos = df.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True).tail(10)
@@ -533,7 +544,7 @@ if uploaded_file is not None:
             st.success("¡Excelente! No se detectaron autorizaciones duplicadas.")
 
         st.markdown("---")
-        st.subheader("⚠️ Inconsistencias en el Nomenclador")
+        st.subheader("⚠️️ Inconsistencias en el Nomenclador")
         
         inconsistencias = df.groupby(col_nomen_cod)[col_nomen_des].nunique().reset_index()
         codigos_problematicos = inconsistencias[inconsistencias[col_nomen_des] > 1][col_nomen_cod]
