@@ -105,7 +105,7 @@ if uploaded_file is not None:
     st.sidebar.markdown("El sistema elimina automáticamente descripciones que contengan estas palabras para limpiar los insumos de la lista de prótesis:")
     
     # Palabras clave por defecto para eliminar insumos
-    palabras_defecto = "DESCARTABLE, SONDA, BOLSA, APOSITO, AGUJA, CATETER, JERINGA, GUIA, BALON, CINTURON, ALGODON, VENDAS, GASAS, PILAS, PASTA"
+    palabras_defecto = "DESCARTABLE, SONDA, BOLSA, APOSITO, AGUJA, CATETER, JERINGA, GUIA, BALON, CINTURON, ALGODON, VENDA, GASA, PILAS, PASTA, RESONANCIA, RNM, RMN, ECOGRAFIA, ECOCARDIOGRAMA, TOMOGRAFIA, DOPPLER, ANGIO, ESPECTROSCOPIA, ESPIROMETRIA, NEUMOGRAFIA, OXIMETRIA, PH METRIA, RADIOTERAPIA, SBRT, FLUOROSCOPIA, VIDEOENDOCAPSULA, ANTI, ALBUMINA, LINFOCITOS, INMUNOFENOTIPO, SUTURA, ADHESIVO, RECARGA, CARTUCHO, CLIP, PARCHE, MALLA, POLIPROPILENO, POLIGLICOLICO, LINEAL, SET, POLVO, SOLUCION, ANSA, CUCHILLA, PINZA, TROCCAR, HEMOLOCK, ACIDOS GRASOS, GUANTE, PAÑAL, PA╤AL, ROPA INTERIOR, REFUERZA, ALQUILER, NEBULIZADOR, MESA, CEMENTO, TROMBOASPIRADOR"
     excluir_input = st.sidebar.text_area("Palabras a excluir (separadas por coma):", palabras_defecto).upper()
     
     # Filtramos primero la categoría macro
