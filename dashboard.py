@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from st_aggrid import AgGrid, GridOptionsBuilder
 
 # Función para formatear moneda y números en Gráficos y Tablas
 def formato_arg(valor, es_moneda=True):
@@ -152,7 +153,7 @@ if uploaded_file is not None:
             df_mes_fact = df.groupby('Mes', observed=False)[col_precio_t].sum().reset_index()
             df_mes_fact = df_mes_fact[df_mes_fact[col_precio_t] > 0] 
             
-            df_mes_fact['texto_label'] = df_mes_fact[col_precio_t].apply(formato_arg)
+            df_mes_fact['texto_label'] = df_mes_fact[col_precio_t].apply(lambda x: formato_arg(x, True))
             fig_fact = px.line(df_mes_fact, x='Mes', y=col_precio_t, markers=True, text='texto_label')
             fig_fact.update_traces(textposition='top center', textfont_size=14, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
             fig_fact.update_layout(separators=",.", yaxis_tickformat=",.0f")
@@ -249,14 +250,45 @@ if uploaded_file is not None:
             
             if clasif_sel:
                 df_desglose = df_micro[df_micro[col_clasif] == clasif_sel]
-                df_desglose_agrupado_gasto = df_desglose.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True)
                 
+                st.markdown("---")
+                st.subheader(f"🏢 Gasto por Centro Proveedor en '{clasif_sel}'")
+                st.markdown("Revisá cuánto facturó cada prestador y desplegá la flecha para ver el detalle exacto de insumos/prácticas.")
+
+                col_graf_prov, col_tab_prov = st.columns([1, 1.5])
+                
+                with col_graf_prov:
+                    df_prov_gasto = df_desglose.groupby(col_razon_social)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True).tail(15)
+                    df_prov_gasto['texto_label'] = df_prov_gasto[col_precio_t].apply(lambda x: formato_arg(x, True))
+                    
+                    fig_prov = px.bar(df_prov_gasto, x=col_precio_t, y=col_razon_social, orientation='h', text='texto_label',
+                                      title=f"Top 15 Prestadores (Monto)")
+                    fig_prov.update_traces(textposition='outside', textfont_size=13, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
+                    fig_prov.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_prov_gasto[col_precio_t].max() * 1.35]))
+                    st.plotly_chart(fig_prov, use_container_width=True, key="graf_prov_gasto")
+
+                with col_tab_prov:
+                    df_matriz_prov = df_desglose.groupby([col_razon_social, col_nomen_des]).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index()
+                    
+                    gb = GridOptionsBuilder.from_dataframe(df_matriz_prov)
+                    gb.configure_column(col_razon_social, rowGroup=True, hide=True, header_name="Centro Proveedor")
+                    gb.configure_column(col_nomen_des, header_name="Práctica / Insumo", width=400)
+                    gb.configure_column(col_cant, type=["numericColumn", "numberColumnFilter"], header_name="Cantidad")
+                    gb.configure_column(col_precio_t, type=["numericColumn", "numberColumnFilter", "customNumericFormat"], precision=2, header_name="Precio Total")
+                    
+                    grid_options = gb.build()
+                    AgGrid(df_matriz_prov, gridOptions=grid_options, height=450, theme='streamlit', fit_columns_on_grid_load=True)
+
+                st.markdown("---")
+                st.subheader(f"📊 Top Prácticas a nivel general en '{clasif_sel}'")
+                
+                df_desglose_agrupado_gasto = df_desglose.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True)
                 df_desglose_top_gasto = df_desglose_agrupado_gasto.tail(15)
-                df_desglose_top_gasto['texto_label'] = df_desglose_top_gasto[col_precio_t].apply(formato_arg)
+                df_desglose_top_gasto['texto_label'] = df_desglose_top_gasto[col_precio_t].apply(lambda x: formato_arg(x, True))
                 
                 fig_desglose_gasto = px.bar(df_desglose_top_gasto, x=col_precio_t, y=col_nomen_des, orientation='h', text='texto_label', 
-                                      title=f"Top 15 Prácticas con Mayor Gasto en '{clasif_sel}'")
-                fig_desglose_gasto.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
+                                              title=f"Top 15 Prácticas con Mayor Gasto Total")
+                fig_desglose_gasto.update_traces(textposition='outside', textfont_size=13, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
                 fig_desglose_gasto.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_top_gasto[col_precio_t].max() * 1.3]))
                 st.plotly_chart(fig_desglose_gasto, use_container_width=True, key="graf_desglose_cat_gasto")
                 
@@ -330,7 +362,7 @@ if uploaded_file is not None:
         
         st.subheader("Top 10 Prácticas que más presupuesto consumen")
         df_top_costos = df.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True).tail(10)
-        df_top_costos['texto_label'] = df_top_costos[col_precio_t].apply(formato_arg)
+        df_top_costos['texto_label'] = df_top_costos[col_precio_t].apply(lambda x: formato_arg(x, True))
         
         fig_top_costos = px.bar(df_top_costos, x=col_precio_t, y=col_nomen_des, orientation='h', text='texto_label')
         fig_top_costos.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
@@ -347,7 +379,7 @@ if uploaded_file is not None:
         df_comp = df[df[col_nomen_des] == practica_comp]
         if not df_comp.empty:
             df_comp_agrupado = df_comp.groupby(col_razon_social).agg({col_precio_u: 'mean', col_cant: 'sum'}).reset_index().sort_values(col_precio_u, ascending=True)
-            df_comp_agrupado['texto_label'] = df_comp_agrupado[col_precio_u].apply(formato_arg)
+            df_comp_agrupado['texto_label'] = df_comp_agrupado[col_precio_u].apply(lambda x: formato_arg(x, True))
             
             fig_comp = px.bar(df_comp_agrupado, x=col_precio_u, y=col_razon_social, orientation='h', text='texto_label', 
                               title=f"Precio Unitario Promedio por Centro para '{practica_comp}'", color=col_precio_u, color_continuous_scale='Reds')
@@ -407,9 +439,9 @@ if uploaded_file is not None:
         if not df_resultado_esp.empty:
             st.info(f"**Resumen de '{practica_esp}' en '{centro_esp}':**")
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Precio Promedio", formato_arg(df_resultado_esp[col_precio_u].mean()))
-            m2.metric("Precio Más Bajo", formato_arg(df_resultado_esp[col_precio_u].min()))
-            m3.metric("Precio Más Alto", formato_arg(df_resultado_esp[col_precio_u].max()))
+            m1.metric("Precio Promedio", formato_arg(df_resultado_esp[col_precio_u].mean(), True))
+            m2.metric("Precio Más Bajo", formato_arg(df_resultado_esp[col_precio_u].min(), True))
+            m3.metric("Precio Más Alto", formato_arg(df_resultado_esp[col_precio_u].max(), True))
             m4.metric("Volumen Autorizado", formato_arg(df_resultado_esp[col_cant].sum(), False))
         else:
             st.warning("No hay registros para esta combinación.")
@@ -439,7 +471,7 @@ if uploaded_file is not None:
             num_afil_actual = df_afil[col_num_afiliado].iloc[0]
             
             st.markdown(f"### 👤 {nom_afil_actual} (Nº {num_afil_actual})")
-            st.write(f"**Gasto Total Registrado:** {formato_arg(df_afil[col_precio_t].sum())}")
+            st.write(f"**Gasto Total Registrado:** {formato_arg(df_afil[col_precio_t].sum(), True)}")
             
             col_af1, col_af2 = st.columns(2)
             with col_af1:
@@ -451,7 +483,7 @@ if uploaded_file is not None:
             with col_af2:
                 df_afil_mes = df_afil.groupby('Mes', observed=False)[col_precio_t].sum().reset_index()
                 df_afil_mes = df_afil_mes[df_afil_mes[col_precio_t] > 0]
-                df_afil_mes['texto_label'] = df_afil_mes[col_precio_t].apply(formato_arg)
+                df_afil_mes['texto_label'] = df_afil_mes[col_precio_t].apply(lambda x: formato_arg(x, True))
                 
                 fig_afil_mes = px.bar(df_afil_mes, x='Mes', y=col_precio_t, text='texto_label', title="Consumo en el Tiempo")
                 fig_afil_mes.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
@@ -481,7 +513,7 @@ if uploaded_file is not None:
             
             kpi1, kpi2, kpi3 = st.columns(3)
             kpi1.metric("Casos Potenciales Detectados", formato_arg(casos_unicos, False))
-            kpi2.metric("Monto Total Bajo Auditoría", formato_arg(monto_riesgo))
+            kpi2.metric("Monto Total Bajo Auditoría", formato_arg(monto_riesgo, True))
             kpi3.metric("Volumen Extra Involucrado", formato_arg(volumen_riesgo, False))
             
             st.markdown("---")
@@ -490,7 +522,7 @@ if uploaded_file is not None:
             with col_g1:
                 st.markdown("**Top Centros Proveedores con Duplicados**")
                 df_dup_prov = df_duplicados.groupby(col_razon_social)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True).tail(10)
-                df_dup_prov['texto_label'] = df_dup_prov[col_precio_t].apply(formato_arg)
+                df_dup_prov['texto_label'] = df_dup_prov[col_precio_t].apply(lambda x: formato_arg(x, True))
                 fig_dup_prov = px.bar(df_dup_prov, x=col_precio_t, y=col_razon_social, orientation='h', text='texto_label')
                 fig_dup_prov.update_traces(textposition='outside', textfont_size=13, textangle=0, cliponaxis=False)
                 fig_dup_prov.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_dup_prov[col_precio_t].max() * 1.3]), margin=dict(l=0, r=0, t=30, b=0))
@@ -544,7 +576,7 @@ if uploaded_file is not None:
             st.success("¡Excelente! No se detectaron autorizaciones duplicadas.")
 
         st.markdown("---")
-        st.subheader("⚠️️ Inconsistencias en el Nomenclador")
+        st.subheader("⚠ Inconsistencias en el Nomenclador")
         
         inconsistencias = df.groupby(col_nomen_cod)[col_nomen_des].nunique().reset_index()
         codigos_problematicos = inconsistencias[inconsistencias[col_nomen_des] > 1][col_nomen_cod]
