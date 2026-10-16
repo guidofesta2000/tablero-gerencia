@@ -163,6 +163,7 @@ if uploaded_file is not None:
         with col_t2:
             st.subheader("Volumen Global de Autorizaciones (Clasificación)")
             df_clasif = df.groupby(col_clasif)[col_cant].sum().reset_index().sort_values(col_cant, ascending=True)
+            df_clasif = df_clasif[df_clasif[col_cant] > 0]
             df_clasif['texto_label'] = df_clasif[col_cant].apply(lambda x: formato_arg(x, False))
             
             fig_clasif = px.bar(df_clasif, x=col_cant, y=col_clasif, orientation='h', text='texto_label')
@@ -235,6 +236,7 @@ if uploaded_file is not None:
             
             st.subheader("Volumen Consolidado (Solo Meses Seleccionados)")
             df_clasif_micro = df_micro.groupby(col_clasif)[col_cant].sum().reset_index().sort_values(col_cant, ascending=True)
+            df_clasif_micro = df_clasif_micro[df_clasif_micro[col_cant] > 0]
             df_clasif_micro['texto_label'] = df_clasif_micro[col_cant].apply(lambda x: formato_arg(x, False))
             
             fig_clasif_micro = px.bar(df_clasif_micro, x=col_cant, y=col_clasif, orientation='h', text='texto_label')
@@ -265,6 +267,9 @@ if uploaded_file is not None:
                 
                 # Eliminamos Mes_Num porque solo era para ordenar cronológicamente
                 df_matriz_prov = df_matriz_prov.drop(columns=['Mes_Num'])
+
+                # FILTRO CLAVE: Dejar solo las prácticas con cantidad mayor a 0 (Para limpiar el Excel y la Matriz)
+                df_matriz_prov = df_matriz_prov[df_matriz_prov[col_cant] > 0]
 
                 # Botón de Descarga Nativo de Streamlit
                 buffer = io.BytesIO()
@@ -301,6 +306,7 @@ if uploaded_file is not None:
                 st.subheader(f"📊 Top Prácticas a nivel general en '{clasif_sel}'")
                 
                 df_desglose_agrupado_gasto = df_desglose.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True)
+                df_desglose_agrupado_gasto = df_desglose_agrupado_gasto[df_desglose_agrupado_gasto[col_precio_t] > 0]
                 
                 df_desglose_top_gasto = df_desglose_agrupado_gasto.tail(15)
                 df_desglose_top_gasto['texto_label'] = df_desglose_top_gasto[col_precio_t].apply(formato_arg)
@@ -311,15 +317,21 @@ if uploaded_file is not None:
                 fig_desglose_gasto.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_top_gasto[col_precio_t].max() * 1.3]))
                 st.plotly_chart(fig_desglose_gasto, use_container_width=True, key="graf_desglose_cat_gasto")
 
+                st.markdown("**Detalle completo de todas las prácticas en esta clasificación:**")
+                df_desglose_tabla = df_desglose.groupby(col_nomen_des).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index().sort_values(col_precio_t, ascending=False)
+                df_desglose_tabla = df_desglose_tabla[df_desglose_tabla[col_cant] > 0] # Filtramos cantidades 0
+                mostrar_tabla_segura(df_desglose_tabla, cols_moneda=[col_precio_t], cols_cantidad=[col_cant])
+
                 st.markdown("---")
                 st.subheader("🕵️‍♂️ Trazabilidad de Afiliados por Práctica")
                 st.markdown(f"Seleccioná una práctica específica dentro de **{clasif_sel}** para ver el listado exacto de afiliados y consumos.")
 
-                practicas_en_clasif = df_desglose[col_nomen_des].dropna().unique()
+                practicas_en_clasif = df_desglose_tabla[col_nomen_des].dropna().unique()
                 practica_drilldown = st.selectbox("Elegí la práctica a auditar:", practicas_en_clasif, key="drilldown_practica")
 
                 if practica_drilldown:
                     df_drilldown = df_desglose[df_desglose[col_nomen_des] == practica_drilldown].copy()
+                    df_drilldown = df_drilldown[df_drilldown[col_cant] > 0] # Filtramos cantidades 0
                     df_drilldown_display = df_drilldown[[col_fecha, col_nomen_des, 'afiliado_display', col_cant, col_precio_t]].sort_values(col_fecha)
 
                     df_drilldown_display = df_drilldown_display.rename(columns={
@@ -338,7 +350,8 @@ if uploaded_file is not None:
                 col_top1, col_top2 = st.columns(2)
                 with col_top1:
                     st.markdown("**Por Volumen Físico (Suma de Unidades)**")
-                    df_desglose_agrupado_cant = df_desglose.groupby(col_nomen_des)[col_cant].sum().reset_index().sort_values(col_cant, ascending=True).tail(15)
+                    df_desglose_agrupado_cant = df_desglose.groupby(col_nomen_des)[col_cant].sum().reset_index().sort_values(col_cant, ascending=True)
+                    df_desglose_agrupado_cant = df_desglose_agrupado_cant[df_desglose_agrupado_cant[col_cant] > 0].tail(15)
                     df_desglose_agrupado_cant['texto_label'] = df_desglose_agrupado_cant[col_cant].apply(lambda x: formato_arg(x, False))
                     fig_cant_cat = px.bar(df_desglose_agrupado_cant, x=col_cant, y=col_nomen_des, orientation='h', text='texto_label', color_discrete_sequence=['#ff9999'])
                     fig_cant_cat.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Unidades: %{text}<extra></extra>', cliponaxis=False)
@@ -347,7 +360,9 @@ if uploaded_file is not None:
                     
                 with col_top2:
                     st.markdown("**Por Carga Administrativa (Cantidad de Trámites)**")
-                    df_desglose_agrupado_tram = df_desglose.groupby(col_nomen_des).size().reset_index(name='Trámites').sort_values('Trámites', ascending=True).tail(15)
+                    # Para trámites, filtramos los que tengan cantidad > 0 antes de contar
+                    df_desglose_valido = df_desglose[df_desglose[col_cant] > 0]
+                    df_desglose_agrupado_tram = df_desglose_valido.groupby(col_nomen_des).size().reset_index(name='Trámites').sort_values('Trámites', ascending=True).tail(15)
                     df_desglose_agrupado_tram['texto_label'] = df_desglose_agrupado_tram['Trámites'].apply(lambda x: formato_arg(x, False))
                     fig_tram_cat = px.bar(df_desglose_agrupado_tram, x='Trámites', y=col_nomen_des, orientation='h', text='texto_label', color_discrete_sequence=['#ffcc99'])
                     fig_tram_cat.update_traces(textposition='outside', textfont_size=13, textangle=0, hovertemplate='Trámites: %{text}<extra></extra>', cliponaxis=False)
@@ -367,6 +382,7 @@ if uploaded_file is not None:
         st.markdown("Listado completo de facturación acumulada por cada centro de salud.")
         
         df_costos_centro = df.groupby(col_razon_social)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=False)
+        df_costos_centro = df_costos_centro[df_costos_centro[col_precio_t] > 0]
         df_costos_centro = df_costos_centro.rename(columns={
             col_razon_social: 'Centro Proveedor',
             col_precio_t: 'Precio Total'
@@ -376,7 +392,8 @@ if uploaded_file is not None:
         st.markdown("---")
         
         st.subheader("Top 10 Prácticas que más presupuesto consumen")
-        df_top_costos = df.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True).tail(10)
+        df_top_costos = df.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True)
+        df_top_costos = df_top_costos[df_top_costos[col_precio_t] > 0].tail(10)
         df_top_costos['texto_label'] = df_top_costos[col_precio_t].apply(formato_arg)
         
         fig_top_costos = px.bar(df_top_costos, x=col_precio_t, y=col_nomen_des, orientation='h', text='texto_label')
@@ -388,12 +405,14 @@ if uploaded_file is not None:
         st.subheader("⚖️ Comparativa de Mercado entre Prestadores")
         st.markdown("Compará el precio unitario promedio de una misma práctica en todos los centros que la realizan.")
         
-        practicas_comunes = df[col_nomen_des].dropna().unique()
+        df_validos = df[df[col_cant] > 0] # Solo prácticas con consumo
+        practicas_comunes = df_validos[col_nomen_des].dropna().unique()
         practica_comp = st.selectbox("Seleccioná la Práctica / Insumo a analizar:", practicas_comunes, key="prac_comparativa")
         
-        df_comp = df[df[col_nomen_des] == practica_comp]
+        df_comp = df_validos[df_validos[col_nomen_des] == practica_comp]
         if not df_comp.empty:
             df_comp_agrupado = df_comp.groupby(col_razon_social).agg({col_precio_u: 'mean', col_cant: 'sum'}).reset_index().sort_values(col_precio_u, ascending=True)
+            df_comp_agrupado = df_comp_agrupado[df_comp_agrupado[col_cant] > 0]
             df_comp_agrupado['texto_label'] = df_comp_agrupado[col_precio_u].apply(formato_arg)
             
             fig_comp = px.bar(df_comp_agrupado, x=col_precio_u, y=col_razon_social, orientation='h', text='texto_label', 
@@ -412,11 +431,11 @@ if uploaded_file is not None:
         
         col_det1, col_det2 = st.columns(2)
         with col_det1:
-            proveedores_disp = sorted(df[col_razon_social].dropna().unique())
+            proveedores_disp = sorted(df_validos[col_razon_social].dropna().unique())
             prov_sel = st.selectbox("1. Seleccioná el Centro Proveedor:", proveedores_disp, key="prov_detalle")
             
         with col_det2:
-            df_prov_filtrado = df[df[col_razon_social] == prov_sel]
+            df_prov_filtrado = df_validos[df_validos[col_razon_social] == prov_sel]
             practicas_prov = sorted(df_prov_filtrado[col_nomen_des].dropna().unique())
             prac_sel = st.selectbox("2. Seleccioná la Práctica/Insumo:", practicas_prov, key="prac_detalle")
             
@@ -443,7 +462,7 @@ if uploaded_file is not None:
         with col_esp1:
             practica_esp = st.selectbox("1. Buscá la práctica/insumo:", practicas_comunes, key="prac_especifica")
             
-        df_prac_esp_filtrada = df[df[col_nomen_des] == practica_esp]
+        df_prac_esp_filtrada = df_validos[df_validos[col_nomen_des] == practica_esp]
         centros_disponibles = df_prac_esp_filtrada[col_razon_social].dropna().unique()
         
         with col_esp2:
@@ -507,6 +526,7 @@ if uploaded_file is not None:
                 
             st.subheader("Historial de Consumos del Afiliado")
             df_afil_display = df_afil[[col_fecha, col_nomen_des, col_cant, col_precio_u, col_precio_t, col_razon_social, col_sede]].sort_values(col_fecha)
+            df_afil_display = df_afil_display[df_afil_display[col_cant] > 0] # Filtramos cantidades 0
             mostrar_tabla_segura(df_afil_display, cols_moneda=[col_precio_u, col_precio_t], cols_cantidad=[col_cant], cols_fecha=[col_fecha])
 
     # ----------------------------------------
@@ -517,7 +537,9 @@ if uploaded_file is not None:
         
         st.subheader("🚨 Detección de Prácticas Múltiples (Mismo Afiliado, Misma Fecha, Misma Práctica)")
         
-        df_duplicados = df[df.duplicated(subset=[col_fecha, col_num_afiliado, col_nomen_des], keep=False)].copy()
+        # Para duplicados, evaluamos sobre los que tuvieron cantidad > 0
+        df_para_duplicados = df[df[col_cant] > 0]
+        df_duplicados = df_para_duplicados[df_para_duplicados.duplicated(subset=[col_fecha, col_num_afiliado, col_nomen_des], keep=False)].copy()
         
         if not df_duplicados.empty:
             df_duplicados = df_duplicados.sort_values(by=[col_fecha, col_num_afiliado])
