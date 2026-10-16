@@ -256,10 +256,10 @@ if uploaded_file is not None:
                 
                 st.markdown("---")
                 st.subheader(f"🏢 Evolución y Gasto por Centro Proveedor en '{clasif_sel}'")
-                st.markdown("Agrupación jerárquica: **Mes ➔ Centro Proveedor ➔ Práctica / Insumo**. Podés descargar el reporte completo a Excel para auditarlo.")
+                st.markdown("Agrupación jerárquica: **Mes ➔ Centro Proveedor ➔ Práctica / Insumo ➔ Afiliado**. Podés descargar el reporte completo a Excel para auditarlo.")
 
-                # Agrupamos por Mes, Proveedor y Práctica. 
-                df_matriz_prov = df_desglose.groupby(['Mes_Num', 'Mes', col_razon_social, col_nomen_des], observed=False).agg({
+                # Agrupamos por Mes, Proveedor, Práctica Y AFILIADO
+                df_matriz_prov = df_desglose.groupby(['Mes_Num', 'Mes', col_razon_social, col_nomen_des, 'afiliado_display'], observed=False).agg({
                     col_cant: 'sum',
                     col_precio_u: 'mean',
                     col_precio_t: 'sum'
@@ -271,10 +271,21 @@ if uploaded_file is not None:
                 # FILTRO CLAVE: Dejar solo las prácticas con cantidad mayor a 0 (Para limpiar el Excel y la Matriz)
                 df_matriz_prov = df_matriz_prov[df_matriz_prov[col_cant] > 0]
 
+                # Preparamos los nombres de columnas para que el Excel salga prolijo
+                df_excel_download = df_matriz_prov.rename(columns={
+                    'Mes': 'Mes',
+                    col_razon_social: 'Centro Proveedor',
+                    col_nomen_des: 'Práctica / Insumo',
+                    'afiliado_display': 'Afiliado',
+                    col_cant: 'Cantidad Total',
+                    col_precio_u: 'Precio Unitario Promedio',
+                    col_precio_t: 'Gasto Total Mensual'
+                })
+
                 # Botón de Descarga Nativo de Streamlit
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df_matriz_prov.to_excel(writer, index=False, sheet_name='Reporte_Mensual')
+                    df_excel_download.to_excel(writer, index=False, sheet_name='Reporte_Mensual')
                 
                 st.download_button(
                     label="📥 Descargar Reporte Completo a Excel",
@@ -287,10 +298,13 @@ if uploaded_file is not None:
                 # Configuración de AgGrid para la cascada y la lectura interactiva
                 gb = GridOptionsBuilder.from_dataframe(df_matriz_prov)
                 
-                # Jerarquía de Agrupación
+                # Jerarquía de Agrupación sumando Práctica e Insumo
                 gb.configure_column('Mes', rowGroup=True, hide=False)
                 gb.configure_column(col_razon_social, rowGroup=True, hide=False, header_name="Centro Proveedor")
-                gb.configure_column(col_nomen_des, header_name="Práctica / Insumo", width=350)
+                gb.configure_column(col_nomen_des, rowGroup=True, hide=False, header_name="Práctica / Insumo", width=350)
+                
+                # El nivel más bajo a mostrar es el afiliado
+                gb.configure_column('afiliado_display', header_name="Afiliado", width=300)
                 
                 # Formato Numérico
                 gb.configure_column(col_cant, type=["numericColumn", "numberColumnFilter"], header_name="Cantidad Total")
