@@ -252,49 +252,55 @@ if uploaded_file is not None:
                 df_desglose = df_micro[df_micro[col_clasif] == clasif_sel]
                 
                 st.markdown("---")
-                st.subheader(f"🏢 Gasto por Centro Proveedor en '{clasif_sel}'")
-                st.markdown("Revisá cuánto facturó cada prestador y desplegá la flecha para ver el detalle exacto de insumos/prácticas.")
+st.markdown("---")
+                st.subheader(f"🏢 Evolución y Gasto por Centro Proveedor en '{clasif_sel}'")
+                st.markdown("Agrupación jerárquica: **Mes ➔ Centro Proveedor ➔ Práctica / Insumo**. Podés descargar el reporte completo a Excel para auditarlo.")
 
-                col_graf_prov, col_tab_prov = st.columns([1, 1.5])
+                # Agrupamos por Mes, Proveedor y Práctica. 
+                # (Calculamos el promedio del precio unitario y sumamos la cantidad y el total)
+                df_matriz_prov = df_desglose.groupby(['Mes_Num', 'Mes', col_razon_social, col_nomen_des]).agg({
+                    col_cant: 'sum',
+                    col_precio_u: 'mean',
+                    col_precio_t: 'sum'
+                }).reset_index().sort_values(['Mes_Num', col_razon_social])
                 
-                with col_graf_prov:
-                    df_prov_gasto = df_desglose.groupby(col_razon_social)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True).tail(15)
-                    df_prov_gasto['texto_label'] = df_prov_gasto[col_precio_t].apply(lambda x: formato_arg(x, True))
-                    
-                    fig_prov = px.bar(df_prov_gasto, x=col_precio_t, y=col_razon_social, orientation='h', text='texto_label',
-                                      title=f"Top 15 Prestadores (Monto)")
-                    fig_prov.update_traces(textposition='outside', textfont_size=13, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
-                    fig_prov.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_prov_gasto[col_precio_t].max() * 1.35]))
-                    st.plotly_chart(fig_prov, use_container_width=True, key="graf_prov_gasto")
+                # Eliminamos Mes_Num porque solo era para ordenar cronológically
+                df_matriz_prov = df_matriz_prov.drop(columns=['Mes_Num'])
 
-                with col_tab_prov:
-                    df_matriz_prov = df_desglose.groupby([col_razon_social, col_nomen_des]).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index()
-                    
-                    gb = GridOptionsBuilder.from_dataframe(df_matriz_prov)
-                    gb.configure_column(col_razon_social, rowGroup=True, hide=True, header_name="Centro Proveedor")
-                    gb.configure_column(col_nomen_des, header_name="Práctica / Insumo", width=400)
-                    gb.configure_column(col_cant, type=["numericColumn", "numberColumnFilter"], header_name="Cantidad")
-                    gb.configure_column(col_precio_t, type=["numericColumn", "numberColumnFilter", "customNumericFormat"], precision=2, header_name="Precio Total")
-                    
-                    grid_options = gb.build()
-                    AgGrid(df_matriz_prov, gridOptions=grid_options, height=450, theme='streamlit', fit_columns_on_grid_load=True)
+                # Botón de Descarga Nativo de Streamlit
+                import io
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df_matriz_prov.to_excel(writer, index=False, sheet_name='Reporte_Mensual')
+                st.download_button(
+                    label="📥 Descargar Reporte Completo a Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"Reporte_Mensual_{clasif_sel}.xlsx",
+                    mime="application/vnd.ms-excel"
+                )
+                st.write("") # Espacio visual
+
+                # Configuración de AgGrid para la cascada y la lectura interactiva
+                from st_aggrid import AgGrid, GridOptionsBuilder
+                gb = GridOptionsBuilder.from_dataframe(df_matriz_prov)
+                
+                # Jerarquía de Agrupación
+                gb.configure_column('Mes', rowGroup=True, hide=False)
+                gb.configure_column(col_razon_social, rowGroup=True, hide=False, header_name="Centro Proveedor")
+                gb.configure_column(col_nomen_des, header_name="Práctica / Insumo", width=350)
+                
+                # Formato Numérico
+                gb.configure_column(col_cant, type=["numericColumn", "numberColumnFilter"], header_name="Cantidad Total")
+                gb.configure_column(col_precio_u, type=["numericColumn", "numberColumnFilter"], precision=2, header_name="Precio Unitario Promedio")
+                gb.configure_column(col_precio_t, type=["numericColumn", "numberColumnFilter"], precision=2, header_name="Gasto Total Mensual")
+                
+                gb.configure_grid_options(groupDefaultExpanded=0) # Mantiene las filas colapsadas para que no sea un bloque enorme al abrir
+                grid_options = gb.build()
+                
+                AgGrid(df_matriz_prov, gridOptions=grid_options, height=500, theme='streamlit', fit_columns_on_grid_load=True)
 
                 st.markdown("---")
                 st.subheader(f"📊 Top Prácticas a nivel general en '{clasif_sel}'")
-                
-                df_desglose_agrupado_gasto = df_desglose.groupby(col_nomen_des)[col_precio_t].sum().reset_index().sort_values(col_precio_t, ascending=True)
-                df_desglose_top_gasto = df_desglose_agrupado_gasto.tail(15)
-                df_desglose_top_gasto['texto_label'] = df_desglose_top_gasto[col_precio_t].apply(lambda x: formato_arg(x, True))
-                
-                fig_desglose_gasto = px.bar(df_desglose_top_gasto, x=col_precio_t, y=col_nomen_des, orientation='h', text='texto_label', 
-                                              title=f"Top 15 Prácticas con Mayor Gasto Total")
-                fig_desglose_gasto.update_traces(textposition='outside', textfont_size=13, hovertemplate='Gasto: %{text}<extra></extra>', cliponaxis=False)
-                fig_desglose_gasto.update_layout(separators=",.", xaxis_tickformat=",.0f", xaxis=dict(range=[0, df_desglose_top_gasto[col_precio_t].max() * 1.3]))
-                st.plotly_chart(fig_desglose_gasto, use_container_width=True, key="graf_desglose_cat_gasto")
-                
-                st.markdown("**Detalle completo de todas las prácticas en esta clasificación:**")
-                df_desglose_tabla = df_desglose.groupby(col_nomen_des).agg({col_cant: 'sum', col_precio_t: 'sum'}).reset_index().sort_values(col_precio_t, ascending=False)
-                mostrar_tabla_segura(df_desglose_tabla, cols_moneda=[col_precio_t], cols_cantidad=[col_cant])
 
                 st.markdown("---")
                 st.subheader("🕵️‍♂️ Trazabilidad de Afiliados por Práctica")
